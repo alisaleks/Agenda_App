@@ -246,7 +246,7 @@ region_mapping = load_excel(region_mapping_path)
 sfshifts['StartTime'] = pd.to_datetime(sfshifts['Shift[StartTime]'], errors='coerce')
 sfshifts['EndTime'] = pd.to_datetime(sfshifts['Shift[EndTime]'], errors='coerce')
 start_date = datetime(2024, 9, 1)
-end_date = datetime(2024, 9, 30)
+end_date = datetime(2024, 10, 6)
 shifts_filtered = sfshifts[(sfshifts['StartTime'] >= start_date) & (sfshifts['EndTime'] <= end_date)].copy()
 
 # Rename columns to match
