@@ -1,4 +1,3 @@
-
 import sys
 import streamlit as st
 import pandas as pd
@@ -30,6 +29,12 @@ st.markdown(
     .css-1lcbmhc {
         max-width: calc(100% - 200px);  
         margin-left: -200px;
+    }
+
+    /* Sidebar filter headers */
+    [data-testid="stSidebar"] .stSelectbox > label {
+        color: white;
+        font-weight: bold;
     }
 
     /* Sidebar statistics styles */
@@ -114,13 +119,11 @@ iso_week_filter = st.sidebar.selectbox('Select ISO Week', sorted(shift_slots['is
 selected_iso_year = datetime.now().year  # Assuming current year, adjust if you have a different dataset
 previous_iso_week = iso_week_filter - 1
 previous_iso_year = selected_iso_year
-# Handle ISO year transition if the selected week is the first week of the year
 if previous_iso_week == 0:
     previous_iso_year -= 1
     previous_iso_week = 52 if (pd.Timestamp(f"{previous_iso_year}-12-28").isocalendar()[1] == 52) else 53
 
-
-# Sidebar filters for Region and Area
+# Sidebar filter for Region
 region_list = sorted(shift_slots['Region'].dropna().unique().tolist())
 region_options = ["All"] + region_list
 
@@ -131,7 +134,14 @@ selected_region = st.sidebar.selectbox(
     help="Select a region or 'All' to view data for all regions."
 )
 
-area_list = sorted(shift_slots['Area'].dropna().unique().tolist())
+# Filter data based on the selected region
+if selected_region == "All":
+    filtered_shift_slots_by_region = shift_slots
+else:
+    filtered_shift_slots_by_region = shift_slots[shift_slots['Region'] == selected_region]
+
+# Sidebar filter for Area based on filtered data by Region
+area_list = sorted(filtered_shift_slots_by_region['Area'].dropna().unique().tolist())
 area_options = ["All"] + area_list
 
 selected_area = st.sidebar.selectbox(
@@ -141,11 +151,16 @@ selected_area = st.sidebar.selectbox(
     help="Select an area or 'All' to view data for all areas."
 )
 
-# Initialize shop filter with "All" as an option
-shop_list = sorted(shift_slots['Shop[Name]'].unique().tolist())
+# Further filter data based on the selected area
+if selected_area == "All":
+    filtered_shift_slots_by_area = filtered_shift_slots_by_region
+else:
+    filtered_shift_slots_by_area = filtered_shift_slots_by_region[filtered_shift_slots_by_region['Area'] == selected_area]
+
+# Sidebar filter for Shop based on filtered data by Region and Area
+shop_list = sorted(filtered_shift_slots_by_area['Shop[Name]'].dropna().unique().tolist())
 shop_options = ["All"] + shop_list
 
-# Single-select dropdown for shop filter with "All" as an option
 selected_shop = st.sidebar.selectbox(
     'Select Shop:',
     options=shop_options,
@@ -251,7 +266,6 @@ df = pivot_table_reset
 
 # Ensure no spaces in field names in df, replacing spaces with underscores or removing them
 df.columns = [col.replace(' ', '_') for col in df.columns]
-
 js_code = JsCode("""
 function(params) {
     var totalHoursField = params.colDef.field.replace('OpenHours', 'TotalHours');
@@ -259,7 +273,9 @@ function(params) {
     var totalHoursValue = params.data[totalHoursField];
     var openHoursValue = params.data[openHoursField];
 
-    if (totalHoursValue === 0) {
+    if (params.data['Shop[Name]'] === 'Total') {
+        return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Make the total row bold and set a light background color for visibility
+    } else if (totalHoursValue === 0) {
         return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red background and white text for TotalHours = 0
     } else if (openHoursValue !== 0 && totalHoursValue !== 0) {
         return {'backgroundColor': '#95cd41'};  // Green for OpenHours != 0 and TotalHours != 0
@@ -270,6 +286,8 @@ function(params) {
     }
 }
 """)
+
+
 
 
 
