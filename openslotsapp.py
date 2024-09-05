@@ -116,6 +116,7 @@ st.markdown(
 )
 
 
+
 # Streamlit App
 st.markdown('<h1 class="custom-title">SLOT AVAILABILITY REPORT</h1>', unsafe_allow_html=True)
 # Define the time zones
@@ -188,9 +189,9 @@ absences_columns_to_string = {
 'Resource.Name': str
 }
 # Load datasets with specific column types
-sfshifts = load_excel('SFshifts_query.xlsx', dtype=shifts_columns_to_string)
-resources = load_csv('resource_query.csv',  dtype=resources_columns_to_string)
-appointments = load_excel('Appointments_aug_oct.xlsx', dtype=appointments_columns_to_string)
+sfshifts = load_excel('C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/FTEshifts/FTEshift_app/SFshifts_query.xlsx', dtype=shifts_columns_to_string)
+resources = load_csv('C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/FTEshifts/FTEshift_app/resource_query.csv',  dtype=resources_columns_to_string)
+appointments = load_excel('C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/Appointments_aug_oct.xlsx', dtype=appointments_columns_to_string)
 absences = load_csv('absences.csv',dtype=absences_columns_to_string)
 # Load regionmapping data
 region_mapping_path = 'regionmapping.xlsx'
@@ -501,7 +502,6 @@ shift_slots['month'] = shift_slots['date'].dt.strftime('%B')
 # Remove Sundays from the shift_slots DataFrame
 shift_slots = shift_slots[shift_slots['weekday'] != 'Sunday']
 check= shift_slots[shift_slots['GT_ShopCode__c'] == '240']
-check
 
 # Sort the shift_slots DataFrame by 'date' to ensure the correct order of days
 shift_slots = shift_slots.sort_values(by='date')
@@ -513,6 +513,15 @@ shift_slots = shift_slots.drop(columns=['CODE'])
 
 # Sidebar filters
 iso_week_filter = st.sidebar.selectbox('Select ISO Week', sorted(shift_slots['iso_week'].unique()))
+# Calculate the previous ISO week and year based on the selected ISO week
+selected_iso_year = datetime.now().year  # Assuming current year, adjust if you have a different dataset
+previous_iso_week = iso_week_filter - 1
+previous_iso_year = selected_iso_year
+
+# Handle ISO year transition if the selected week is the first week of the year
+if previous_iso_week == 0:
+    previous_iso_year -= 1
+    previous_iso_week = 52 if (pd.Timestamp(f"{previous_iso_year}-12-28").isocalendar()[1] == 52) else 53
 
 # Initialize shop_code_filter with an "All" option
 shop_list = sorted(shift_slots['Shop[Name]'].unique().tolist())
@@ -565,45 +574,67 @@ if filtered_data.empty:
     st.warning("No shops found for the selected filter criteria.")
 
 
-today = datetime.now()
-current_iso_year, current_iso_week, _ = today.isocalendar()
+# Filter data for the previous ISO week
+previous_week_data = shift_slots[(shift_slots['iso_week'] == previous_iso_week) & (shift_slots['date'].dt.year == previous_iso_year)]
 
-# Determine the previous ISO week and year
-previous_iso_year = current_iso_year
-previous_iso_week = current_iso_week - 1
+# Apply the same filters for previous week data
+if "All" not in selected_shops:
+    previous_week_data = previous_week_data[previous_week_data['Shop[Name]'].isin(selected_shops)]
 
-# Handle ISO year transition if we're in the first week of the year
-if previous_iso_week == 0:
-    previous_iso_year -= 1
-    previous_iso_week = 52 if (pd.Timestamp(f"{previous_iso_year}-12-28").isocalendar()[1] == 52) else 53
+if "All" not in selected_region:
+    previous_week_data = previous_week_data[previous_week_data['Region'].isin(selected_region)]
 
-# Filter data for the current ISO week, last ISO week, and month to date
-current_week_data = shift_slots[(shift_slots['iso_week'] == current_iso_week) & (shift_slots['date'].dt.year == current_iso_year)]
-last_week_data = shift_slots[(shift_slots['iso_week'] == previous_iso_week) & (shift_slots['date'].dt.year == previous_iso_year)]
-start_of_month = today.replace(day=1)
-month_to_date_data = shift_slots[(shift_slots['date'] >= start_of_month) & (shift_slots['date'] <= today)]
+if "All" not in selected_area:
+    previous_week_data = previous_week_data[previous_week_data['Area'].isin(selected_area)]
 
-# Calculate Open Hours for this week
-open_hours_this_week = current_week_data['OpenHours'].sum()
+# Check if filtered data is empty after applying the filters
+if filtered_data.empty:
+    st.warning("No shops found for the selected filter criteria.")
+
+open_hours_this_week = filtered_data['OpenHours'].sum()
 # Calculate change from last week in percentage
-open_hours_last_week = last_week_data['OpenHours'].sum()
+open_hours_last_week = previous_week_data['OpenHours'].sum()
 change_from_last_week = ((open_hours_this_week - open_hours_last_week) / open_hours_last_week * 100) if open_hours_last_week != 0 else 0
+# Calculate the start and end dates for the selected ISO week
+selected_week_start = pd.Timestamp(selected_iso_year, 1, 1) + pd.offsets.Week(weekday=0) * (iso_week_filter - 1)
+selected_week_end = selected_week_start + pd.offsets.Week(weekday=6)  # End of the selected week
 
-# Calculate change from month to date in percentage
-open_hours_mtd = month_to_date_data['OpenHours'].sum()
-change_from_mtd = ((open_hours_this_week - open_hours_mtd) / open_hours_mtd * 100) if open_hours_mtd != 0 else 0
+# Determine the start of the current month
+start_of_month = selected_week_start.replace(day=1)
+
+# Filter data for the first day of the month and the last day of the selected week
+first_day_of_month_data = shift_slots[shift_slots['date'] == start_of_month]
+last_day_of_selected_week_data = shift_slots[shift_slots['date'] == selected_week_end]
+
+# Apply filters based on sidebar selections
+if "All" not in selected_shops:
+    first_day_of_month_data = first_day_of_month_data[first_day_of_month_data['Shop[Name]'].isin(selected_shops)]
+    last_day_of_selected_week_data = last_day_of_selected_week_data[last_day_of_selected_week_data['Shop[Name]'].isin(selected_shops)]
+
+if "All" not in selected_region:
+    first_day_of_month_data = first_day_of_month_data[first_day_of_month_data['Region'].isin(selected_region)]
+    last_day_of_selected_week_data = last_day_of_selected_week_data[last_day_of_selected_week_data['Region'].isin(selected_region)]
+
+if "All" not in selected_area:
+    first_day_of_month_data = first_day_of_month_data[first_day_of_month_data['Area'].isin(selected_area)]
+    last_day_of_selected_week_data = last_day_of_selected_week_data[last_day_of_selected_week_data['Area'].isin(selected_area)]
+
+# Calculate Open Hours for the first day of the month and the last day of the selected week
+open_hours_first_day_of_month = first_day_of_month_data['OpenHours'].sum()
+open_hours_last_day_of_selected_week = last_day_of_selected_week_data['OpenHours'].sum()
+
+# Calculate change from the first day of the month to the last day of the selected week in percentage
+change_from_mtd = ((open_hours_last_day_of_selected_week - open_hours_first_day_of_month) / open_hours_first_day_of_month * 100) if open_hours_first_day_of_month != 0 else 0
 
 # Determine the best configured region (e.g., highest average saturation percentage)
 best_configured_region = shift_slots.groupby('Region')['SaturationPercentage'].mean().idxmax() if not shift_slots.empty else 'N/A'
-# Display statistics in the sidebar
-st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open Hours for this week: {open_hours_this_week:.2f}</div>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for for the selected week: {open_hours_this_week:.2f}</div>", unsafe_allow_html=True)
 
 st.sidebar.markdown(f"<div class='sidebar-stats-box'>Change from last week: {change_from_last_week:.2f}%</div>", unsafe_allow_html=True)
 
-st.sidebar.markdown(f"<div class='sidebar-stats-box'>Change from month to date: {change_from_mtd:.2f}%</div>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Change from the start of the month: {change_from_mtd:.2f}%</div>", unsafe_allow_html=True)
 
 st.sidebar.markdown(f"<div class='sidebar-stats-box'>Best configured region: {best_configured_region}</div>", unsafe_allow_html=True)
-
 
 
 
