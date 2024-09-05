@@ -189,9 +189,9 @@ absences_columns_to_string = {
 'Resource.Name': str
 }
 # Load datasets with specific column types
-sfshifts = load_excel('C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/FTEshifts/FTEshift_app/SFshifts_query.xlsx', dtype=shifts_columns_to_string)
-resources = load_csv('C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/FTEshifts/FTEshift_app/resource_query.csv',  dtype=resources_columns_to_string)
-appointments = load_excel('C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/Appointments_aug_oct.xlsx', dtype=appointments_columns_to_string)
+sfshifts = load_excel('SFshifts_query.xlsx', dtype=shifts_columns_to_string)
+resources = load_csv('resource_query.csv',  dtype=resources_columns_to_string)
+appointments = load_excel('Appointments_aug_oct.xlsx', dtype=appointments_columns_to_string)
 absences = load_csv('absences.csv',dtype=absences_columns_to_string)
 # Load regionmapping data
 region_mapping_path = 'regionmapping.xlsx'
