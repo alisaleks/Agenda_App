@@ -287,10 +287,6 @@ function(params) {
 }
 """)
 
-
-
-
-
 custom_css = {
     ".ag-header-cell": {
         "background-color": "#cc0641 !important",  # Ensure entire cell background changes
