@@ -32,12 +32,15 @@ def convert_utc_to_madrid(dt):
     return dt_madrid
 
 @st.cache_data
-def load_excel(file_path, **kwargs):
-    return pd.read_excel(file_path, **kwargs)
+def load_excel(file_path, usecols=None, **kwargs):
+    # Load specific columns if usecols is provided to reduce memory usage
+    return pd.read_excel(file_path, usecols=usecols, **kwargs)
 
 @st.cache_data
-def load_csv(file_path, **kwargs):
-    return pd.read_csv(file_path, **kwargs)
+def load_csv(file_path, usecols=None, **kwargs):
+    # Load specific columns if usecols is provided to reduce memory usage
+    return pd.read_csv(file_path, usecols=usecols, **kwargs)
+
 
 st.set_page_config(layout="wide")
 
@@ -125,7 +128,7 @@ st.markdown(
     <div class="label-container">
         <span class="label-text"><span class="circle red-circle"></span>La agenda está mal configurada</span>
         <span class="label-text"><span class="circle orange-circle"></span>La agenda está bien configurada, pero llena</span>
-        <span class="label-text"><span class="circle green-circle"></span>La agenda está bien configurada</span>
+        <span class="label-text"><span class="circle green-circle"></span>La agenda está bien configurada y disponible</span>
     </div>
     """,
     unsafe_allow_html=True
@@ -189,15 +192,65 @@ absences_columns_to_string = {
 'Resource.Name': str
 }
 # Load datasets with specific column types
-sfshifts = load_excel('SFshifts_query.xlsx', dtype=shifts_columns_to_string)
-resources = load_csv('resource_query.csv',  dtype=resources_columns_to_string)
-appointments = load_excel('Appointments_aug_oct.xlsx', dtype=appointments_columns_to_string)
-absences = load_csv('absences.csv',dtype=absences_columns_to_string)
+# Load datasets with only the necessary columns specified
+sfshifts = load_excel( 'SFshifts_query.xlsx', 
+    dtype=shifts_columns_to_string,
+    usecols=[
+        'Shift[ShiftNumber]', 'Shift[Label]', 'Service Resource[Name]', 'Shop[GT_ShopCode__c]', 
+        'Service Resource[GT_Role__c]', 'Shift[StartTime]', 'Shift[EndTime]', 
+        'Shift[ServiceResourceId]', 'Shop[GT_CountryCode__c]', 'Shop[Country]', 
+        'Shop[Name]', 'Shop[GT_AreaManagerCode__c]', 'Shift[LastModifiedDate]', 
+        'Service Resource[GT_PersonalNumber__c]', 'Shop[GT_StoreType__c]', 'Shop[GT_AreaCode__c]'
+    ]
+)
+
+resources = load_csv(
+   'resource_query.csv',  
+    dtype=resources_columns_to_string,
+    usecols=[
+        'Shop[GT_CountryCode__c]', 'Service Territory Member[EffectiveEndDate]', 
+        'Service Territory Member[EffectiveStartDate]', 'Shop[Country]', 
+        'Service Territory Member[ServiceTerritoryId]', 'Shop[GT_ShopCode__c]', 
+        'Service Territory Member[ServiceResourceId]', 'Service Resource[GT_PersonalNumber__c]', 
+        'Service Resource[GT_Role__c]'
+    ]
+)
+
+appointments = load_excel(
+    'Appointments_aug_oct.xlsx', 
+    dtype=appointments_columns_to_string,
+    usecols=[
+        'Service Appointment[AppointmentNumber]', 'Service Appointment[ServiceTerritoryId]', 
+        'Service Appointment[Business_Shop__c]', 'Service Appointment[GT_ShopCode__c]', 
+        'Shop[GT_CountryCode__c]', 'Service Appointment[GT_Cluster__c]', 
+        'Service Appointment[GT_Macrocategory__c]', 'Service Appointment[GT_AccountNameConcatenated__c]', 
+        'Shop[GT_AreaCode__c]', 'Shop[GT_StoreType__c]', 'Shop[GT_AreaManagerCode__c]', 
+        'Service Appointment[SchedStartTime]', 'Service Appointment[SchedEndTime]', 
+        'Service Resource[GT_Role__c]', 'Service Appointment[GT_ServiceResource__c]', 
+        'Service Resource[Name]', 'Service Appointment[Status]', 'Service Appointment[LastModifiedDate]'
+    ]
+)
+
+absences = load_csv(
+    'absences.csv',
+    dtype=absences_columns_to_string,
+    usecols=[
+        'AbsenceNumber', 'Start', 'End', 'Resource.Name', 'Resource.Account', 
+        'Resource.GT_PersonalNumber__c', 'Resource.RelatedRecord.GT_StoreCode__c', 'Type'
+    ]
+)
 # Load regionmapping data
 region_mapping_path = 'regionmapping.xlsx'
 region_mapping = load_excel(region_mapping_path)
+
+sfshifts['StartTime'] = pd.to_datetime(sfshifts['Shift[StartTime]'], errors='coerce')
+sfshifts['EndTime'] = pd.to_datetime(sfshifts['Shift[EndTime]'], errors='coerce')
+start_date = datetime(2024, 9, 1)
+end_date = datetime(2024, 9, 30)
+shifts_filtered = sfshifts[(sfshifts['StartTime'] >= start_date) & (sfshifts['EndTime'] <= end_date)].copy()
+
 # Rename columns to match
-sfshifts.rename(columns={
+shifts_filtered.rename(columns={
     'Shop[GT_ShopCode__c]': 'GT_ShopCode__c',
     'Service Resource[Name]': 'GT_ServiceResource__r.Name'
 }, inplace=True)
@@ -207,9 +260,7 @@ resources.rename(columns={
 }, inplace=True)
 
 # Convert specific columns to datetime
-sfshifts['StartTime'] = pd.to_datetime(sfshifts['Shift[StartTime]'], errors='coerce')
-sfshifts['EndTime'] = pd.to_datetime(sfshifts['Shift[EndTime]'], errors='coerce')
-sfshifts['LastModifiedDate'] = pd.to_datetime(sfshifts['Shift[LastModifiedDate]'], errors='coerce')
+shifts_filtered['LastModifiedDate'] = pd.to_datetime(shifts_filtered['Shift[LastModifiedDate]'], errors='coerce')
 appointments['ApptStartTime'] = pd.to_datetime(appointments['Service Appointment[SchedStartTime]'], errors='coerce').dt.tz_localize(None)
 appointments['ApptEndTime'] = pd.to_datetime(
     appointments['Service Appointment[SchedEndTime]'],
@@ -223,34 +274,31 @@ appointments['ApptEndTime'] = pd.to_datetime(
 ).dt.tz_localize(None)
 appointments['ApptsLastModifiedDate'] = pd.to_datetime(appointments['Service Appointment[LastModifiedDate]'], errors='coerce').dt.tz_localize(None)
 # Drop original datetime columns
-sfshifts.drop(columns=['Shift[StartTime]', 'Shift[EndTime]', 'Shift[LastModifiedDate]'], inplace=True)
+shifts_filtered.drop(columns=['Shift[StartTime]', 'Shift[EndTime]', 'Shift[LastModifiedDate]'], inplace=True)
 appointments.drop(columns=['Service Appointment[SchedStartTime]', 'Service Appointment[SchedEndTime]', 'Service Appointment[LastModifiedDate]'], inplace=True)
 # Convert to datetime with out-of-bound handling for specific columns
 resources['EffectiveEndDate'] = resources['Service Territory Member[EffectiveEndDate]'].apply(handle_out_of_bound_dates)
 resources['EffectiveStartDate'] = resources['Service Territory Member[EffectiveStartDate]'].apply(handle_out_of_bound_dates)
 
 # Add a date column
-sfshifts['date'] = sfshifts['StartTime'].dt.strftime('%d/%m/%Y')
+shifts_filtered['date'] = shifts_filtered['StartTime'].dt.strftime('%d/%m/%Y')
 
 # Directly extract ISO week and year from StartTime
-sfshifts['iso_week'] = sfshifts['StartTime'].dt.isocalendar().week
-sfshifts['iso_year'] = sfshifts['StartTime'].dt.isocalendar().year
+shifts_filtered['iso_week'] = shifts_filtered['StartTime'].dt.isocalendar().week
+shifts_filtered['iso_year'] = shifts_filtered['StartTime'].dt.isocalendar().year
 
-sfshifts['StartDateHour'] = sfshifts['StartTime'].dt.strftime('%Y-%m-%d %H:00:00')
-sfshifts['Key'] = sfshifts['GT_ShopCode__c'] + '_' + sfshifts['GT_ServiceResource__r.Name'] + '_' + sfshifts['StartDateHour']
-duplicates = sfshifts[sfshifts.duplicated(subset=['Key'], keep=False)]
-sfshifts = sfshifts.sort_values(by=['Key', 'LastModifiedDate'], ascending=[True, False])
-sfshifts = sfshifts.drop_duplicates(subset=['Key'], keep='first')
-sfshifts['ShopResourceKey'] = sfshifts['GT_ShopCode__c'] + sfshifts['Shift[ServiceResourceId]']
+shifts_filtered['StartDateHour'] = shifts_filtered['StartTime'].dt.strftime('%Y-%m-%d %H:00:00')
+shifts_filtered['Key'] = shifts_filtered['GT_ShopCode__c'] + '_' + shifts_filtered['GT_ServiceResource__r.Name'] + '_' + shifts_filtered['StartDateHour']
+duplicates = shifts_filtered[shifts_filtered.duplicated(subset=['Key'], keep=False)]
+shifts_filtered = shifts_filtered.sort_values(by=['Key', 'LastModifiedDate'], ascending=[True, False])
+shifts_filtered = shifts_filtered.drop_duplicates(subset=['Key'], keep='first')
+shifts_filtered['ShopResourceKey'] = shifts_filtered['GT_ShopCode__c'] + shifts_filtered['Shift[ServiceResourceId]']
 resources['ShopResourceKey'] = resources['GT_ShopCode__c'] + resources['Service Territory Member[ServiceResourceId]']
-start_date = datetime(2024, 9, 1)
-end_date = datetime(2024, 9, 30)
 
 resources['IsActive'] = resources.apply(is_active, axis=1, args=(start_date, end_date))
 active_resources = resources[resources['IsActive']]
-sfshifts = sfshifts[sfshifts['ShopResourceKey'].isin(active_resources['ShopResourceKey'])]
+shifts_filtered = shifts_filtered[shifts_filtered['ShopResourceKey'].isin(active_resources['ShopResourceKey'])]
 
-shifts_filtered = sfshifts[(sfshifts['StartTime'] >= start_date) & (sfshifts['EndTime'] <= end_date)].copy()
 shifts_filtered['PersonalNumberKey'] = shifts_filtered['GT_ShopCode__c'] + '_' + shifts_filtered['Service Resource[GT_PersonalNumber__c]']
 shifts_filtered['ShiftDate'] = shifts_filtered['StartTime'].dt.date
 shifts_filtered['ShiftDurationHours'] = (shifts_filtered['EndTime'] - shifts_filtered['StartTime']).dt.total_seconds() / 3600
@@ -425,6 +473,9 @@ shift_slots['TotalSlots_gross'] = shift_slots['ShiftDurationHours']*60 / 5
 # Filter appointments within August
 appointments_filtered = appointments[(appointments['ApptStartTime'] >= start_date) & (appointments['ApptEndTime'] <= end_date)].copy()
 
+# Example: Deleting unused DataFrames to free up memory
+del sfshifts, resources, appointments, absences
+
 # Fill NA in categories with 'First Visit'
 appointments_filtered['Service Appointment[GT_Macrocategory__c]'] = appointments_filtered['Service Appointment[GT_Macrocategory__c]'].fillna('First Visit')
 appointments_filtered['Service Appointment[GT_Macrocategory__c]'] = appointments_filtered['Service Appointment[GT_Macrocategory__c]'].str.strip()
@@ -502,7 +553,6 @@ shift_slots['month'] = shift_slots['date'].dt.strftime('%B')
 # Remove Sundays from the shift_slots DataFrame
 shift_slots = shift_slots[shift_slots['weekday'] != 'Sunday']
 check= shift_slots[shift_slots['GT_ShopCode__c'] == '240']
-
 # Sort the shift_slots DataFrame by 'date' to ensure the correct order of days
 shift_slots = shift_slots.sort_values(by='date')
 # Merge cleaned_data with region_mapping to update 'Region_Descr'
@@ -510,133 +560,113 @@ shift_slots = shift_slots.merge(region_mapping[['CODE', 'REGION', 'AREA']], left
 shift_slots.rename(columns={'REGION': 'Region', 'AREA': 'Area'}, inplace=True)
 shift_slots = shift_slots.drop(columns=['CODE'])
 
-
-# Sidebar filters
+# Sidebar filters (all converted to single-selection using selectbox)
 iso_week_filter = st.sidebar.selectbox('Select ISO Week', sorted(shift_slots['iso_week'].unique()))
+
 # Calculate the previous ISO week and year based on the selected ISO week
 selected_iso_year = datetime.now().year  # Assuming current year, adjust if you have a different dataset
 previous_iso_week = iso_week_filter - 1
 previous_iso_year = selected_iso_year
-
 # Handle ISO year transition if the selected week is the first week of the year
 if previous_iso_week == 0:
     previous_iso_year -= 1
     previous_iso_week = 52 if (pd.Timestamp(f"{previous_iso_year}-12-28").isocalendar()[1] == 52) else 53
 
-# Initialize shop_code_filter with an "All" option
-shop_list = sorted(shift_slots['Shop[Name]'].unique().tolist())
-shop_options = ["All"] + shop_list
-
-# Multi-select dropdown for shop filter with "All" as default
-selected_shops = st.sidebar.multiselect(
-    'Select Shop(s):',
-    options=shop_options,
-    default=["All"],  # Default to "All"
-    help="Select one or more shops or 'All' to view data for all shops."
-)
 
 # Sidebar filters for Region and Area
 region_list = sorted(shift_slots['Region'].dropna().unique().tolist())
 region_options = ["All"] + region_list
 
-selected_region = st.sidebar.multiselect(
+selected_region = st.sidebar.selectbox(
     'Select Region:',
     options=region_options,
-    default=["All"],  # Default to "All"
-    help="Select one or more regions or 'All' to view data for all regions."
+    index=0,  # Default to "All"
+    help="Select a region or 'All' to view data for all regions."
 )
 
 area_list = sorted(shift_slots['Area'].dropna().unique().tolist())
 area_options = ["All"] + area_list
 
-selected_area = st.sidebar.multiselect(
+selected_area = st.sidebar.selectbox(
     'Select Area:',
     options=area_options,
-    default=["All"],  # Default to "All"
-    help="Select one or more areas or 'All' to view data for all areas."
+    index=0,  # Default to "All"
+    help="Select an area or 'All' to view data for all areas."
 )
 
-# Apply filters based on sidebar selections
-filtered_data = shift_slots[shift_slots['iso_week'] == iso_week_filter]
+# Initialize shop filter with "All" as an option
+shop_list = sorted(shift_slots['Shop[Name]'].unique().tolist())
+shop_options = ["All"] + shop_list
 
-# Update the filtering logic to handle multiple selections
-if "All" not in selected_shops:
-    filtered_data = filtered_data[filtered_data['Shop[Name]'].isin(selected_shops)]
+# Single-select dropdown for shop filter with "All" as an option
+selected_shop = st.sidebar.selectbox(
+    'Select Shop:',
+    options=shop_options,
+    index=0,  # Default to "All"
+    help="Select a shop or 'All' to view data for all shops."
+)
 
-if "All" not in selected_region:
-    filtered_data = filtered_data[filtered_data['Region'].isin(selected_region)]
+# Function for lazy loading of filtered data
+@st.cache_data
+def filter_shift_slots(data, iso_week_filter, selected_shop, selected_region, selected_area):
+    # Start with the full data
+    filtered_data = data.copy()
 
-if "All" not in selected_area:
-    filtered_data = filtered_data[filtered_data['Area'].isin(selected_area)]
+    # Apply filters based on sidebar selections
+    filtered_data = filtered_data[filtered_data['iso_week'] == iso_week_filter]
+
+    if selected_region != "All":
+        filtered_data = filtered_data[filtered_data['Region'] == selected_region]
+
+    if selected_area != "All":
+        filtered_data = filtered_data[filtered_data['Area'] == selected_area]
+        
+    if selected_shop != "All":
+        filtered_data = filtered_data[filtered_data['Shop[Name]'] == selected_shop]
+
+    return filtered_data
+
+# Filter data for the selected ISO week using the user's filter choices
+filtered_data = filter_shift_slots(shift_slots, iso_week_filter, selected_shop, selected_region, selected_area)
 
 # Check if filtered data is empty after applying the filters
 if filtered_data.empty:
     st.warning("No shops found for the selected filter criteria.")
 
+# Filter data for the previous ISO week without applying the current filters (directly from shift_slots)
+previous_week_data = shift_slots[
+    (shift_slots['iso_week'] == previous_iso_week) &
+    (shift_slots['Region'] == selected_region if selected_region != "All" else True) &
+    (shift_slots['Area'] == selected_area if selected_area != "All" else True) &
+    (shift_slots['Shop[Name]'] == selected_shop if selected_shop != "All" else True)
+]
 
-# Filter data for the previous ISO week
-previous_week_data = shift_slots[(shift_slots['iso_week'] == previous_iso_week) & (shift_slots['date'].dt.year == previous_iso_year)]
-
-# Apply the same filters for previous week data
-if "All" not in selected_shops:
-    previous_week_data = previous_week_data[previous_week_data['Shop[Name]'].isin(selected_shops)]
-
-if "All" not in selected_region:
-    previous_week_data = previous_week_data[previous_week_data['Region'].isin(selected_region)]
-
-if "All" not in selected_area:
-    previous_week_data = previous_week_data[previous_week_data['Area'].isin(selected_area)]
-
-# Check if filtered data is empty after applying the filters
-if filtered_data.empty:
-    st.warning("No shops found for the selected filter criteria.")
-
+# Calculate Open Hours for the current and previous weeks
 open_hours_this_week = filtered_data['OpenHours'].sum()
-# Calculate change from last week in percentage
 open_hours_last_week = previous_week_data['OpenHours'].sum()
-change_from_last_week = ((open_hours_this_week - open_hours_last_week) / open_hours_last_week * 100) if open_hours_last_week != 0 else 0
+
+# Calculate percentage change from last week, with checks to prevent division by zero
+if open_hours_last_week != 0:
+    change_from_last_week = ((open_hours_this_week - open_hours_last_week) / open_hours_last_week) * 100
+else:
+    change_from_last_week = 0  # Or handle differently, depending on your needs
+
 # Calculate the start and end dates for the selected ISO week
 selected_week_start = pd.Timestamp(selected_iso_year, 1, 1) + pd.offsets.Week(weekday=0) * (iso_week_filter - 1)
-selected_week_end = selected_week_start + pd.offsets.Week(weekday=6)  # End of the selected week
+selected_week_end = selected_week_start + pd.offsets.Week(weekday=6)
+today = pd.Timestamp(datetime.now().date())
+end_of_month = today.replace(day=1) + pd.offsets.MonthEnd(0)
+# Calculate "Open Hours for the month to go" using the entire dataset
+month_to_go_data = shift_slots[(shift_slots['date'] >= today) & (shift_slots['date'] <= end_of_month)]
+open_hours_month_to_go = month_to_go_data['OpenHours'].sum()
 
-# Determine the start of the current month
-start_of_month = selected_week_start.replace(day=1)
 
-# Filter data for the first day of the month and the last day of the selected week
-first_day_of_month_data = shift_slots[shift_slots['date'] == start_of_month]
-last_day_of_selected_week_data = shift_slots[shift_slots['date'] == selected_week_end]
-
-# Apply filters based on sidebar selections
-if "All" not in selected_shops:
-    first_day_of_month_data = first_day_of_month_data[first_day_of_month_data['Shop[Name]'].isin(selected_shops)]
-    last_day_of_selected_week_data = last_day_of_selected_week_data[last_day_of_selected_week_data['Shop[Name]'].isin(selected_shops)]
-
-if "All" not in selected_region:
-    first_day_of_month_data = first_day_of_month_data[first_day_of_month_data['Region'].isin(selected_region)]
-    last_day_of_selected_week_data = last_day_of_selected_week_data[last_day_of_selected_week_data['Region'].isin(selected_region)]
-
-if "All" not in selected_area:
-    first_day_of_month_data = first_day_of_month_data[first_day_of_month_data['Area'].isin(selected_area)]
-    last_day_of_selected_week_data = last_day_of_selected_week_data[last_day_of_selected_week_data['Area'].isin(selected_area)]
-
-# Calculate Open Hours for the first day of the month and the last day of the selected week
-open_hours_first_day_of_month = first_day_of_month_data['OpenHours'].sum()
-open_hours_last_day_of_selected_week = last_day_of_selected_week_data['OpenHours'].sum()
-
-# Calculate change from the first day of the month to the last day of the selected week in percentage
-change_from_mtd = ((open_hours_last_day_of_selected_week - open_hours_first_day_of_month) / open_hours_first_day_of_month * 100) if open_hours_first_day_of_month != 0 else 0
-
-# Determine the best configured region (e.g., highest average saturation percentage)
-best_configured_region = shift_slots.groupby('Region')['SaturationPercentage'].mean().idxmax() if not shift_slots.empty else 'N/A'
-st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for for the selected week: {open_hours_this_week:.2f}</div>", unsafe_allow_html=True)
-
+# Determine the best configured region
+best_configured_region = shift_slots.groupby('Region')['SaturationPercentage'].mean().idxmax() if not filtered_data.empty else 'N/A'
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for the selected week: {open_hours_this_week:.2f}</div>", unsafe_allow_html=True)
 st.sidebar.markdown(f"<div class='sidebar-stats-box'>Change from last week: {change_from_last_week:.2f}%</div>", unsafe_allow_html=True)
-
-st.sidebar.markdown(f"<div class='sidebar-stats-box'>Change from the start of the month: {change_from_mtd:.2f}%</div>", unsafe_allow_html=True)
-
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for month to go: {open_hours_month_to_go:.2f}</div>", unsafe_allow_html=True)
 st.sidebar.markdown(f"<div class='sidebar-stats-box'>Best configured region: {best_configured_region}</div>", unsafe_allow_html=True)
-
-
 
 # Ensure that only numeric columns are included for aggregation
 numeric_cols = ['OpenHours', 'TotalHours', 'SaturationPercentage']
@@ -683,16 +713,17 @@ function(params) {
     var openHoursValue = params.data[openHoursField];
 
     if (totalHoursValue === 0) {
-        return {'backgroundColor': '#cc0641'};  // Red for TotalHours = 0
+        return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red background and white text for TotalHours = 0
     } else if (openHoursValue !== 0 && totalHoursValue !== 0) {
-        return {'backgroundColor': '#95cd41'};  // green for OpenHours != 0 and TotalHours != 0
+        return {'backgroundColor': '#95cd41'};  // Green for OpenHours != 0 and TotalHours != 0
     } else if (openHoursValue === 0 && totalHoursValue !== 0) {
-        return {'backgroundColor': '#f1b84b'};  // orange for OpenHours = 0 and TotalHours != 0
+        return {'backgroundColor': '#f1b84b'};  // Orange for OpenHours = 0 and TotalHours != 0
     } else {
         return null; 
     }
 }
 """)
+
 
 
 custom_css = {
