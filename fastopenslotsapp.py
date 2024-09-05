@@ -1,0 +1,387 @@
+
+import sys
+import streamlit as st
+import pandas as pd
+import pytz
+from datetime import datetime, timedelta
+from st_aggrid import GridOptionsBuilder, AgGrid, JsCode
+from st_aggrid.shared import GridUpdateMode, DataReturnMode, ColumnsAutoSizeMode, AgGridTheme, ExcelExportMode
+from st_aggrid.AgGridReturn import AgGridReturn
+import json
+
+@st.cache_data
+def load_excel(file_path, usecols=None, **kwargs):
+    # Load specific columns if usecols is provided to reduce memory usage
+    return pd.read_excel(file_path, usecols=usecols, **kwargs)
+
+st.set_page_config(layout="wide")
+
+# Apply custom CSS to adjust the sidebar and main content width
+st.markdown(
+    """
+    <style>
+    /* Reduce the width of the sidebar */
+    [data-testid="stSidebar"] {
+        width: 100px; 
+        background-color: #cc0641; 
+    }
+
+    /* Make the main content fill more of the screen */
+    .css-1lcbmhc {
+        max-width: calc(100% - 200px);  
+        margin-left: -200px;
+    }
+
+    /* Sidebar statistics styles */
+    .sidebar-stats-box {
+        color: white;  /* Text color */
+        font-weight: bold;  /* Bold text */
+        border: 2px solid white ;  /* Add a border around the box */
+        background-color: #cc0641;  /* Set background to transparent or keep it to match the sidebar */
+        padding: 10px;  /* Padding inside the box */
+        margin-bottom: 5px;  /* Space below each box */
+        border-radius: 5px;  /* Optional: Rounded corners */
+    }
+
+    .custom-title {
+        font-size: 2em;  /* Adjust font size */
+        color: #cc0641;  /* Change text color to match your theme */
+        font-weight: bold;  /* Make text bold */
+        text-align: center;  /* Center align the title */
+        margin-top: -50px;  /* Move the title higher by using a negative margin */
+        margin-bottom: 20px;  /* Add space below the title */
+        background-color: #f0f2f6;  /* Optional: Add a subtle background color */
+        padding: 10px;  /* Add padding around the title */
+        border-radius: 10px;  /* Optional: Rounded corners for the background */
+    }
+    
+    /* Circle styles for color-coded labels */
+    .circle {
+        height: 15px;
+        width: 15px;
+        display: inline-block;
+        border-radius: 50%;
+        margin-right: 10px;
+    }
+    .red-circle {
+        background-color: #cc0641;
+    }
+    .orange-circle {
+        background-color: #f1b84b;
+    }
+    .green-circle {
+        background-color: #95cd41;
+    }
+    
+    .label-container {
+        text-align: center;  /* Center align the labels */
+        margin-bottom: 20px;  /* Add space below the labels */
+    }
+    
+    .label-text {
+        display: inline-block;
+        vertical-align: middle;
+        font-size: 1em;  /* Adjust font size */
+        margin-right: 20px;  /* Space between labels */
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+# Streamlit App
+st.markdown('<h1 class="custom-title">SLOT AVAILABILITY REPORT</h1>', unsafe_allow_html=True)
+# Define the time zones
+st.markdown(
+    """
+    <div class="label-container">
+        <span class="label-text"><span class="circle red-circle"></span>La agenda está mal configurada</span>
+        <span class="label-text"><span class="circle orange-circle"></span>La agenda está bien configurada, pero llena</span>
+        <span class="label-text"><span class="circle green-circle"></span>La agenda está bien configurada y disponible</span>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+shift_slots = load_excel(
+    'shiftslots.xlsx')
+
+# Sidebar filters (all converted to single-selection using selectbox)
+iso_week_filter = st.sidebar.selectbox('Select ISO Week', sorted(shift_slots['iso_week'].unique()))
+
+# Calculate the previous ISO week and year based on the selected ISO week
+selected_iso_year = datetime.now().year  # Assuming current year, adjust if you have a different dataset
+previous_iso_week = iso_week_filter - 1
+previous_iso_year = selected_iso_year
+# Handle ISO year transition if the selected week is the first week of the year
+if previous_iso_week == 0:
+    previous_iso_year -= 1
+    previous_iso_week = 52 if (pd.Timestamp(f"{previous_iso_year}-12-28").isocalendar()[1] == 52) else 53
+
+
+# Sidebar filters for Region and Area
+region_list = sorted(shift_slots['Region'].dropna().unique().tolist())
+region_options = ["All"] + region_list
+
+selected_region = st.sidebar.selectbox(
+    'Select Region:',
+    options=region_options,
+    index=0,  # Default to "All"
+    help="Select a region or 'All' to view data for all regions."
+)
+
+area_list = sorted(shift_slots['Area'].dropna().unique().tolist())
+area_options = ["All"] + area_list
+
+selected_area = st.sidebar.selectbox(
+    'Select Area:',
+    options=area_options,
+    index=0,  # Default to "All"
+    help="Select an area or 'All' to view data for all areas."
+)
+
+# Initialize shop filter with "All" as an option
+shop_list = sorted(shift_slots['Shop[Name]'].unique().tolist())
+shop_options = ["All"] + shop_list
+
+# Single-select dropdown for shop filter with "All" as an option
+selected_shop = st.sidebar.selectbox(
+    'Select Shop:',
+    options=shop_options,
+    index=0,  # Default to "All"
+    help="Select a shop or 'All' to view data for all shops."
+)
+
+# Function for lazy loading of filtered data
+@st.cache_data
+def filter_shift_slots(data, iso_week_filter, selected_shop, selected_region, selected_area):
+    # Start with the full data
+    filtered_data = data.copy()
+
+    # Apply filters based on sidebar selections
+    filtered_data = filtered_data[filtered_data['iso_week'] == iso_week_filter]
+
+    if selected_region != "All":
+        filtered_data = filtered_data[filtered_data['Region'] == selected_region]
+
+    if selected_area != "All":
+        filtered_data = filtered_data[filtered_data['Area'] == selected_area]
+        
+    if selected_shop != "All":
+        filtered_data = filtered_data[filtered_data['Shop[Name]'] == selected_shop]
+
+    return filtered_data
+
+# Filter data for the selected ISO week using the user's filter choices
+filtered_data = filter_shift_slots(shift_slots, iso_week_filter, selected_shop, selected_region, selected_area)
+
+# Check if filtered data is empty after applying the filters
+if filtered_data.empty:
+    st.warning("No shops found for the selected filter criteria.")
+
+# Filter data for the previous ISO week without applying the current filters (directly from shift_slots)
+previous_week_data = shift_slots[
+    (shift_slots['iso_week'] == previous_iso_week) &
+    (shift_slots['Region'] == selected_region if selected_region != "All" else True) &
+    (shift_slots['Area'] == selected_area if selected_area != "All" else True) &
+    (shift_slots['Shop[Name]'] == selected_shop if selected_shop != "All" else True)
+]
+
+# Calculate Open Hours for the current and previous weeks
+open_hours_this_week = filtered_data['OpenHours'].sum()
+open_hours_last_week = previous_week_data['OpenHours'].sum()
+
+# Calculate percentage change from last week, with checks to prevent division by zero
+if open_hours_last_week != 0:
+    change_from_last_week = ((open_hours_this_week - open_hours_last_week) / open_hours_last_week) * 100
+else:
+    change_from_last_week = 0  # Or handle differently, depending on your needs
+
+# Calculate the start and end dates for the selected ISO week
+selected_week_start = pd.Timestamp(selected_iso_year, 1, 1) + pd.offsets.Week(weekday=0) * (iso_week_filter - 1)
+selected_week_end = selected_week_start + pd.offsets.Week(weekday=6)
+today = pd.Timestamp(datetime.now().date())
+end_of_month = today.replace(day=1) + pd.offsets.MonthEnd(0)
+# Calculate "Open Hours for the month to go" using the entire dataset
+month_to_go_data = shift_slots[(shift_slots['date'] >= today) & (shift_slots['date'] <= end_of_month)]
+open_hours_month_to_go = month_to_go_data['OpenHours'].sum()
+
+
+# Determine the best configured region
+best_configured_region = shift_slots.groupby('Region')['SaturationPercentage'].mean().idxmax() if not filtered_data.empty else 'N/A'
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for the selected week: {open_hours_this_week:.2f}</div>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Change from last week: {change_from_last_week:.2f}%</div>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for month to go: {open_hours_month_to_go:.2f}</div>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Best configured region: {best_configured_region}</div>", unsafe_allow_html=True)
+
+# Ensure that only numeric columns are included for aggregation
+numeric_cols = ['OpenHours', 'TotalHours', 'SaturationPercentage']
+filtered_data_numeric = filtered_data[numeric_cols + ['day', 'weekday', 'GT_ShopCode__c', 'Shop[Name]']]
+
+# Aggregating data by GT_ShopCode__c, Shop[Name], date, and weekday
+aggregated_data = filtered_data.groupby(['GT_ShopCode__c', 'Shop[Name]', 'date', 'weekday']).agg(
+    OpenHours=('OpenHours', 'sum'),
+    TotalHours=('TotalHours', 'sum'),
+    SaturationPercentage=('SaturationPercentage', 'mean')
+).reset_index()
+
+aggregated_data['date'] = pd.to_datetime(aggregated_data['date']).dt.date
+check= aggregated_data[(aggregated_data['GT_ShopCode__c'] == '240')]
+
+# Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
+pivot_table = aggregated_data.pivot_table(
+    index=['Shop[Name]'],
+    columns=['date', 'weekday'],
+    values=['OpenHours', 'TotalHours'],
+    aggfunc='sum',
+    fill_value=0  
+)
+
+# Flatten the columns
+pivot_table.columns = [f"{col[0]}_{col[1]}_{col[2]}" for col in pivot_table.columns.to_flat_index()]
+pivot_table_reset = pivot_table.reset_index()
+
+# Format all numeric columns to one decimal point
+numeric_columns_in_pivot = [col for col in pivot_table_reset.columns if any(nc in col for nc in ['OpenHours', 'TotalHours'])]
+pivot_table_reset[numeric_columns_in_pivot] = pivot_table_reset[numeric_columns_in_pivot].round(1)
+
+# Create the DataFrame (df)
+df = pivot_table_reset
+
+# Ensure no spaces in field names in df, replacing spaces with underscores or removing them
+df.columns = [col.replace(' ', '_') for col in df.columns]
+
+js_code = JsCode("""
+function(params) {
+    var totalHoursField = params.colDef.field.replace('OpenHours', 'TotalHours');
+    var openHoursField = params.colDef.field.replace('TotalHours', 'OpenHours');
+    var totalHoursValue = params.data[totalHoursField];
+    var openHoursValue = params.data[openHoursField];
+
+    if (totalHoursValue === 0) {
+        return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red background and white text for TotalHours = 0
+    } else if (openHoursValue !== 0 && totalHoursValue !== 0) {
+        return {'backgroundColor': '#95cd41'};  // Green for OpenHours != 0 and TotalHours != 0
+    } else if (openHoursValue === 0 && totalHoursValue !== 0) {
+        return {'backgroundColor': '#f1b84b'};  // Orange for OpenHours = 0 and TotalHours != 0
+    } else {
+        return null; 
+    }
+}
+""")
+
+
+
+custom_css = {
+    ".ag-header-cell": {
+        "background-color": "#cc0641 !important",  # Ensure entire cell background changes
+        "color": "white !important",
+        "font-weight": "bold",
+        "padding": "4px"  # Reduce padding to make headers more compact
+    },
+    ".ag-header-group-cell": {  # Style for merged/group headers
+        "background-color": "#cc0641 !important",
+        "color": "white !important",
+        "font-weight": "bold",
+    },
+    ".ag-cell": {
+        "padding": "2px",  # Reduce padding inside cells to make them more compact
+        "font-size": "12px"  # Reduce font size for a more compact look
+    },
+    ".ag-header": {
+        "height": "35px",  # Reduce header height
+    },
+    ".ag-theme-streamlit .ag-row": {
+        "max-height": "30px"  # Adjust max height for rows to be more compact
+    },
+    ".ag-theme-streamlit .ag-menu-option-text, .ag-theme-streamlit .ag-filter-body-wrapper, .ag-theme-streamlit .ag-input-wrapper, .ag-theme-streamlit .ag-icon": {
+        "font-size": "6px !important"  # Reduce font size for filter options and ensure it's applied
+    },
+    ".ag-theme-streamlit .ag-root-wrapper": {
+        "border": "2px solid #cc0641",  # Add outer border with specified color
+        "border-radius": "5px"  # Optional: Rounded corners for the outer border
+    }
+}
+
+# Example column definition with flex and resizable properties
+columnDefs = [
+    {
+        "headerName": "Shop Name",
+        "field": "Shop[Name]", 
+        "resizable": True,
+        "flex": 2,  # Adjust flex value to make this column wider
+        "minWidth": 150,  # Set a minimum width for columns
+        "filter": 'agTextColumnFilter',  # Set filter type to text for shop name
+    },
+]
+
+# Append dynamic column definitions with conditional formatting for OpenHours and TotalHours
+for column in df.columns[1:]:  # Start from 1 to skip Shop_Name
+    if 'OpenHours' in column:
+        headerName = column.split('_')[1] + ' (' + column.split('_')[2] + ')'
+        columnDefs.append({
+            "headerName": headerName,
+            "children": [
+                {
+                    "field": column,
+                    "headerName": "Open Hours",
+                    "valueFormatter": "x.toFixed(1)",
+                    "resizable": True,
+                    "flex": 1,
+                    "cellStyle": js_code                },
+                {
+                    "field": column.replace('OpenHours', 'TotalHours'),
+                    "headerName": "Total Hours",
+                    "valueFormatter": "x.toFixed(1)",
+                    "resizable": True,
+                    "flex": 1,   
+                    "cellStyle": js_code                  }
+            ]
+        })
+
+# Calculate totals for numeric columns
+total_row = {
+    'Shop[Name]': 'Total'
+}
+
+# Iterate over the numeric columns to compute totals
+for col in numeric_columns_in_pivot:
+    total_row[col] = df[col].sum()
+
+# Convert total_row to DataFrame
+total_df = pd.DataFrame(total_row, index=[0])
+
+df_with_totals = pd.concat([df, total_df], ignore_index=True)
+
+# Configure GridOptionsBuilder with JavaScript code
+gb = GridOptionsBuilder.from_dataframe(df_with_totals)
+
+for column in df.columns[1:]:
+    if 'OpenHours' in column:
+        gb.configure_column(column, cellStyle=js_code)
+
+# Allow columns to fill the width and use autoHeight for rows
+gb.configure_grid_options(domLayout= 'normal', autoSizeColumns='allColumns', enableFillHandle=True)
+
+# Build grid options
+grid_options = gb.build()
+
+# Set the columnDefs in the grid_options dictionary
+grid_options['columnDefs'] = columnDefs
+
+# Render the AG-Grid in Streamlit with full width
+try:
+    AgGrid(
+        df_with_totals,
+        gridOptions=grid_options,
+        enable_enterprise_modules=True,
+        allow_unsafe_jscode=True,  # Allow JavaScript code execution
+        fit_columns_on_grid_load=True,  # Automatically fit columns on load
+        height=1000,  # Set grid height to 500 pixels
+        width='100%',  # Set grid width to 100% of the available space
+        theme='streamlit',
+        custom_css=custom_css   
+    )
+except Exception as ex:
+    st.error(f"An error occurred: {ex}")
