@@ -106,6 +106,7 @@ resources = load_csv(
     ]
 )
 
+
 appointments = load_excel(
     'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/Appointments_aug_oct.xlsx', 
     dtype=appointments_columns_to_string,
