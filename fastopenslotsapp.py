@@ -7,9 +7,10 @@ from st_aggrid import GridOptionsBuilder, AgGrid, JsCode
 from st_aggrid.shared import GridUpdateMode, DataReturnMode, ColumnsAutoSizeMode, AgGridTheme, ExcelExportMode
 from st_aggrid.AgGridReturn import AgGridReturn
 import json
+import os
 
 @st.cache_data
-def load_excel(file_path, usecols=None, **kwargs):
+def load_excel(file_path, usecols=None, file_mod_time=None, **kwargs):
     # Load specific columns if usecols is provided to reduce memory usage
     return pd.read_excel(file_path, usecols=usecols, **kwargs)
 
@@ -108,9 +109,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+file_mod_time = os.path.getmtime('shiftslots.xlsx')
 
-shift_slots = load_excel(
-    'shiftslots.xlsx')
+shift_slots = load_excel('shiftslots.xlsx', file_mod_time=file_mod_time)
 
 # Sidebar filters (all converted to single-selection using selectbox)
 iso_week_filter = st.sidebar.selectbox('Select ISO Week', sorted(shift_slots['iso_week'].unique()))
