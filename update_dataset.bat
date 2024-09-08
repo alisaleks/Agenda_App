@@ -12,4 +12,4 @@ echo Pushing to GitHub
 git push origin main || (echo Push failed & exit /b 1)
 
 echo Push completed successfully
-exit /b 0
+pause  # This will keep the terminal open so you can read the output
