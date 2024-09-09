@@ -230,173 +230,310 @@ st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for the selected
 st.sidebar.markdown(f"<div class='sidebar-stats-box'>Change from last week: {change_from_last_week:.2f}%</div>", unsafe_allow_html=True)
 st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for month to go: {open_hours_month_to_go:.2f}</div>", unsafe_allow_html=True)
 st.sidebar.markdown(f"<div class='sidebar-stats-box'>Best configured region: {best_configured_region}</div>", unsafe_allow_html=True)
-
 # Ensure that only numeric columns are included for aggregation
-numeric_cols = ['OpenHours', 'TotalHours', 'SaturationPercentage']
+numeric_cols = ['OpenHours', 'TotalHours', 'BlockedHoursPercentage']
 filtered_data_numeric = filtered_data[numeric_cols + ['day', 'weekday', 'GT_ShopCode__c', 'Shop[Name]']]
 
 # Aggregating data by GT_ShopCode__c, Shop[Name], date, and weekday
 aggregated_data = filtered_data.groupby(['GT_ShopCode__c', 'Shop[Name]', 'date', 'weekday']).agg(
     OpenHours=('OpenHours', 'sum'),
     TotalHours=('TotalHours', 'sum'),
-    SaturationPercentage=('SaturationPercentage', 'mean')
+    BlockedHoursPercentage=('BlockedHoursPercentage', 'mean')
 ).reset_index()
 
 aggregated_data['date'] = pd.to_datetime(aggregated_data['date']).dt.date
 check= aggregated_data[(aggregated_data['GT_ShopCode__c'] == '240')]
 
-# Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
-pivot_table = aggregated_data.pivot_table(
-    index=['Shop[Name]'],
-    columns=['date', 'weekday'],
-    values=['OpenHours', 'TotalHours'],
-    aggfunc='sum',
-    fill_value=0  
-)
+tab1, tab2 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage"])
 
-# Flatten the columns
-pivot_table.columns = [f"{col[0]}_{col[1]}_{col[2]}" for col in pivot_table.columns.to_flat_index()]
-pivot_table_reset = pivot_table.reset_index()
+with tab1:
+    st.write("Open Hours vs Total Hours")
+        
+    # Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
+    pivot_table = aggregated_data.pivot_table(
+        index=['Shop[Name]'],
+        columns=['date', 'weekday'],
+        values=['OpenHours', 'TotalHours'],
+        aggfunc='sum',
+        fill_value=0  
+    )
 
-# Format all numeric columns to one decimal point
-numeric_columns_in_pivot = [col for col in pivot_table_reset.columns if any(nc in col for nc in ['OpenHours', 'TotalHours'])]
-pivot_table_reset[numeric_columns_in_pivot] = pivot_table_reset[numeric_columns_in_pivot].round(1)
+    # Flatten the columns
+    pivot_table.columns = [f"{col[0]}_{col[1]}_{col[2]}" for col in pivot_table.columns.to_flat_index()]
+    pivot_table_reset = pivot_table.reset_index()
 
-# Create the DataFrame (df)
-df = pivot_table_reset
+    # Format all numeric columns to one decimal point
+    numeric_columns_in_pivot = [col for col in pivot_table_reset.columns if any(nc in col for nc in ['OpenHours', 'TotalHours'])]
+    pivot_table_reset[numeric_columns_in_pivot] = pivot_table_reset[numeric_columns_in_pivot].round(1)
 
-# Ensure no spaces in field names in df, replacing spaces with underscores or removing them
-df.columns = [col.replace(' ', '_') for col in df.columns]
-js_code = JsCode("""
-function(params) {
-    var totalHoursField = params.colDef.field.replace('OpenHours', 'TotalHours');
-    var openHoursField = params.colDef.field.replace('TotalHours', 'OpenHours');
-    var totalHoursValue = params.data[totalHoursField];
-    var openHoursValue = params.data[openHoursField];
+    # Create the DataFrame (df)
+    df = pivot_table_reset
 
-    if (params.data['Shop[Name]'] === 'Total') {
-        return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Make the total row bold and set a light background color for visibility
-    } else if (totalHoursValue === 0) {
-        return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red background and white text for TotalHours = 0
-    } else if (openHoursValue !== 0 && totalHoursValue !== 0) {
-        return {'backgroundColor': '#95cd41'};  // Green for OpenHours != 0 and TotalHours != 0
-    } else if (openHoursValue === 0 && totalHoursValue !== 0) {
-        return {'backgroundColor': '#f1b84b'};  // Orange for OpenHours = 0 and TotalHours != 0
-    } else {
-        return null; 
+    # Ensure no spaces in field names in df, replacing spaces with underscores or removing them
+    df.columns = [col.replace(' ', '_') for col in df.columns]
+    js_code = JsCode("""
+    function(params) {
+        var totalHoursField = params.colDef.field.replace('OpenHours', 'TotalHours');
+        var openHoursField = params.colDef.field.replace('TotalHours', 'OpenHours');
+        var totalHoursValue = params.data[totalHoursField];
+        var openHoursValue = params.data[openHoursField];
+
+        if (params.data['Shop[Name]'] === 'Total') {
+            return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Make the total row bold and set a light background color for visibility
+        } else if (totalHoursValue === 0) {
+            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red background and white text for TotalHours = 0
+        } else if (openHoursValue !== 0 && totalHoursValue !== 0) {
+            return {'backgroundColor': '#95cd41'};  // Green for OpenHours != 0 and TotalHours != 0
+        } else if (openHoursValue === 0 && totalHoursValue !== 0) {
+            return {'backgroundColor': '#f1b84b'};  // Orange for OpenHours = 0 and TotalHours != 0
+        } else {
+            return null; 
+        }
     }
-}
-""")
+    """)
 
-custom_css = {
-    ".ag-header-cell": {
-        "background-color": "#cc0641 !important",  # Ensure entire cell background changes
-        "color": "white !important",
-        "font-weight": "bold",
-        "padding": "4px"  # Reduce padding to make headers more compact
-    },
-    ".ag-header-group-cell": {  # Style for merged/group headers
-        "background-color": "#cc0641 !important",
-        "color": "white !important",
-        "font-weight": "bold",
-    },
-    ".ag-cell": {
-        "padding": "2px",  # Reduce padding inside cells to make them more compact
-        "font-size": "12px"  # Reduce font size for a more compact look
-    },
-    ".ag-header": {
-        "height": "35px",  # Reduce header height
-    },
-    ".ag-theme-streamlit .ag-row": {
-        "max-height": "30px"  # Adjust max height for rows to be more compact
-    },
-    ".ag-theme-streamlit .ag-menu-option-text, .ag-theme-streamlit .ag-filter-body-wrapper, .ag-theme-streamlit .ag-input-wrapper, .ag-theme-streamlit .ag-icon": {
-        "font-size": "6px !important"  # Reduce font size for filter options and ensure it's applied
-    },
-    ".ag-theme-streamlit .ag-root-wrapper": {
-        "border": "2px solid #cc0641",  # Add outer border with specified color
-        "border-radius": "5px"  # Optional: Rounded corners for the outer border
+    custom_css = {
+        ".ag-header-cell": {
+            "background-color": "#cc0641 !important",  # Ensure entire cell background changes
+            "color": "white !important",
+            "font-weight": "bold",
+            "padding": "4px"  # Reduce padding to make headers more compact
+        },
+        ".ag-header-group-cell": {  # Style for merged/group headers
+            "background-color": "#cc0641 !important",
+            "color": "white !important",
+            "font-weight": "bold",
+        },
+        ".ag-cell": {
+            "padding": "2px",  # Reduce padding inside cells to make them more compact
+            "font-size": "12px"  # Reduce font size for a more compact look
+        },
+        ".ag-header": {
+            "height": "35px",  # Reduce header height
+        },
+        ".ag-theme-streamlit .ag-row": {
+            "max-height": "30px"  # Adjust max height for rows to be more compact
+        },
+        ".ag-theme-streamlit .ag-menu-option-text, .ag-theme-streamlit .ag-filter-body-wrapper, .ag-theme-streamlit .ag-input-wrapper, .ag-theme-streamlit .ag-icon": {
+            "font-size": "6px !important"  # Reduce font size for filter options and ensure it's applied
+        },
+        ".ag-theme-streamlit .ag-root-wrapper": {
+            "border": "2px solid #cc0641",  # Add outer border with specified color
+            "border-radius": "5px"  # Optional: Rounded corners for the outer border
+        }
     }
-}
 
-# Example column definition with flex and resizable properties
-columnDefs = [
-    {
-        "headerName": "Shop Name",
-        "field": "Shop[Name]", 
-        "resizable": True,
-        "flex": 2,  # Adjust flex value to make this column wider
-        "minWidth": 150,  # Set a minimum width for columns
-        "filter": 'agTextColumnFilter',  # Set filter type to text for shop name
-    },
-]
+    # Example column definition with flex and resizable properties
+    columnDefs = [
+        {
+            "headerName": "Shop Name",
+            "field": "Shop[Name]", 
+            "resizable": True,
+            "flex": 2,  # Adjust flex value to make this column wider
+            "minWidth": 150,  # Set a minimum width for columns
+            "filter": 'agTextColumnFilter',  # Set filter type to text for shop name
+        },
+    ]
 
-# Append dynamic column definitions with conditional formatting for OpenHours and TotalHours
-for column in df.columns[1:]:  # Start from 1 to skip Shop_Name
-    if 'OpenHours' in column:
-        headerName = column.split('_')[1] + ' (' + column.split('_')[2] + ')'
-        columnDefs.append({
+    # Append dynamic column definitions with conditional formatting for OpenHours and TotalHours
+    for column in df.columns[1:]:  # Start from 1 to skip Shop_Name
+        if 'OpenHours' in column:
+            headerName = column.split('_')[1] + ' (' + column.split('_')[2] + ')'
+            columnDefs.append({
+                "headerName": headerName,
+                "children": [
+                    {
+                        "field": column,
+                        "headerName": "Open Hours",
+                        "valueFormatter": "x.toFixed(1)",
+                        "resizable": True,
+                        "flex": 1,
+                        "cellStyle": js_code                },
+                    {
+                        "field": column.replace('OpenHours', 'TotalHours'),
+                        "headerName": "Total Hours",
+                        "valueFormatter": "x.toFixed(1)",
+                        "resizable": True,
+                        "flex": 1,   
+                        "cellStyle": js_code                  }
+                ]
+            })
+
+    # Calculate totals for numeric columns
+    total_row = {
+        'Shop[Name]': 'Total'
+    }
+
+    # Iterate over the numeric columns to compute totals
+    for col in numeric_columns_in_pivot:
+        total_row[col] = df[col].sum()
+
+    # Convert total_row to DataFrame
+    total_df = pd.DataFrame(total_row, index=[0])
+
+    df_with_totals = pd.concat([df, total_df], ignore_index=True)
+
+    # Configure GridOptionsBuilder with JavaScript code
+    gb = GridOptionsBuilder.from_dataframe(df_with_totals)
+
+    for column in df.columns[1:]:
+        if 'OpenHours' in column:
+            gb.configure_column(column, cellStyle=js_code)
+
+    # Allow columns to fill the width and use autoHeight for rows
+    gb.configure_grid_options(domLayout= 'normal', autoSizeColumns='allColumns', enableFillHandle=True)
+
+    # Build grid options
+    grid_options = gb.build()
+
+    # Set the columnDefs in the grid_options dictionary
+    grid_options['columnDefs'] = columnDefs
+
+    # Render the AG-Grid in Streamlit with full width
+    try:
+        AgGrid(
+            df_with_totals,
+            gridOptions=grid_options,
+            enable_enterprise_modules=True,
+            allow_unsafe_jscode=True,  # Allow JavaScript code execution
+            fit_columns_on_grid_load=True,  # Automatically fit columns on load
+            height=1000,  # Set grid height to 500 pixels
+            width='100%',  # Set grid width to 100% of the available space
+            theme='streamlit',
+            custom_css=custom_css   
+        )
+    except Exception as ex:
+        st.error(f"An error occurred: {ex}")
+with tab2:
+    st.write("Blocked Hours Percentage")
+
+    # Adjust the pivot table to use BlockedHoursPercentage
+    pivot_table_tab2 = aggregated_data.pivot_table(
+        index=['Shop[Name]'],
+        columns=['date', 'weekday'],
+        values='BlockedHoursPercentage',
+        aggfunc='mean',
+        fill_value=0
+    )
+
+    # Flatten the columns for display
+    pivot_table_tab2.columns = [f"{col[0]}_{col[1]}" for col in pivot_table_tab2.columns.to_flat_index()]
+    pivot_table_tab2_reset = pivot_table_tab2.reset_index()
+
+    # Create the DataFrame for AgGrid
+    df_tab2 = pivot_table_tab2_reset
+
+    # Ensure no spaces in field names in df, replacing spaces with underscores or removing them
+    df_tab2.columns = [col.replace(' ', '_') for col in df_tab2.columns]
+
+    # JavaScript code for custom cell styling
+    js_code = JsCode("""
+    function(params) {
+        var blockedHoursValue = params.value;
+
+        if (blockedHoursValue === 0) {
+            return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for BlockedHoursPercentage = 0
+        } else if (blockedHoursValue > 0 && blockedHoursValue <= 50) {
+            return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for BlockedHoursPercentage between 0 and 50
+        } else if (blockedHoursValue > 50) {
+            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for BlockedHoursPercentage > 50
+        } else {
+            return null;  // Default style
+        }
+    }
+    """)
+
+    custom_css = {
+        ".ag-header-cell": {
+            "background-color": "#cc0641 !important",  # Ensure entire cell background changes
+            "color": "white !important",
+            "font-weight": "bold",
+            "padding": "4px"  # Reduce padding to make headers more compact
+        },
+        ".ag-header-group-cell": {  # Style for merged/group headers
+            "background-color": "#cc0641 !important",
+            "color": "white !important",
+            "font-weight": "bold",
+        },
+        ".ag-cell": {
+            "padding": "2px",  # Reduce padding inside cells to make them more compact
+            "font-size": "12px"  # Reduce font size for a more compact look
+        },
+        ".ag-header": {
+            "height": "35px",  # Reduce header height
+        },
+        ".ag-theme-streamlit .ag-row": {
+            "max-height": "30px"  # Adjust max height for rows to be more compact
+        },
+        ".ag-theme-streamlit .ag-menu-option-text, .ag-theme-streamlit .ag-filter-body-wrapper, .ag-theme-streamlit .ag-input-wrapper, .ag-theme-streamlit .ag-icon": {
+            "font-size": "6px !important"  # Reduce font size for filter options and ensure it's applied
+        },
+        ".ag-theme-streamlit .ag-root-wrapper": {
+            "border": "2px solid #cc0641",  # Add outer border with specified color
+            "border-radius": "5px"  # Optional: Rounded corners for the outer border
+        }
+    }
+
+    # Example column definition with flex and resizable properties
+    columnDefs_tab2 = [
+        {
+            "headerName": "Shop Name",
+            "field": "Shop[Name]", 
+            "resizable": True,
+            "flex": 2,  # Adjust flex value to make this column wider
+            "minWidth": 150,  # Set a minimum width for columns
+            "filter": 'agTextColumnFilter',  # Set filter type to text for shop name
+        },
+    ]
+
+    # Append dynamic column definitions for BlockedHoursPercentage
+    for column in df_tab2.columns[1:]:  # Start from 1 to skip Shop[Name]
+        headerName = column.split('_')[0] + ' (' + column.split('_')[1] + ')'
+        columnDefs_tab2.append({
+            "field": column,
             "headerName": headerName,
-            "children": [
-                {
-                    "field": column,
-                    "headerName": "Open Hours",
-                    "valueFormatter": "x.toFixed(1)",
-                    "resizable": True,
-                    "flex": 1,
-                    "cellStyle": js_code                },
-                {
-                    "field": column.replace('OpenHours', 'TotalHours'),
-                    "headerName": "Total Hours",
-                    "valueFormatter": "x.toFixed(1)",
-                    "resizable": True,
-                    "flex": 1,   
-                    "cellStyle": js_code                  }
-            ]
+            "valueFormatter": "(x > 100 ? 100 : x.toFixed(1)) + ' %'",  # Cap at 100 and add %
+            "resizable": True,
+            "flex": 1,
+            "cellStyle": js_code
         })
 
-# Calculate totals for numeric columns
-total_row = {
-    'Shop[Name]': 'Total'
-}
+    # Calculate totals for BlockedHoursPercentage
+    total_row_tab2 = {'Shop[Name]': 'Total'}
+    for col in df_tab2.columns[1:]:
+        total_row_tab2[col] = df_tab2[col].mean()
 
-# Iterate over the numeric columns to compute totals
-for col in numeric_columns_in_pivot:
-    total_row[col] = df[col].sum()
+    # Convert total_row to DataFrame and append to the original data
+    total_df_tab2 = pd.DataFrame(total_row_tab2, index=[0])
+    df_with_totals_tab2 = pd.concat([df_tab2, total_df_tab2], ignore_index=True)
 
-# Convert total_row to DataFrame
-total_df = pd.DataFrame(total_row, index=[0])
+    # Configure GridOptionsBuilder with JavaScript code
+    gb_tab2 = GridOptionsBuilder.from_dataframe(df_with_totals_tab2)
 
-df_with_totals = pd.concat([df, total_df], ignore_index=True)
+    for column in df_tab2.columns[1:]:
+        gb_tab2.configure_column(column, cellStyle=js_code)
 
-# Configure GridOptionsBuilder with JavaScript code
-gb = GridOptionsBuilder.from_dataframe(df_with_totals)
+    # Allow columns to fill the width and use autoHeight for rows
+    gb_tab2.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
 
-for column in df.columns[1:]:
-    if 'OpenHours' in column:
-        gb.configure_column(column, cellStyle=js_code)
+    # Build grid options
+    grid_options_tab2 = gb_tab2.build()
 
-# Allow columns to fill the width and use autoHeight for rows
-gb.configure_grid_options(domLayout= 'normal', autoSizeColumns='allColumns', enableFillHandle=True)
+    # Set the columnDefs in the grid_options dictionary
+    grid_options_tab2['columnDefs'] = columnDefs_tab2
 
-# Build grid options
-grid_options = gb.build()
-
-# Set the columnDefs in the grid_options dictionary
-grid_options['columnDefs'] = columnDefs
-
-# Render the AG-Grid in Streamlit with full width
-try:
-    AgGrid(
-        df_with_totals,
-        gridOptions=grid_options,
-        enable_enterprise_modules=True,
-        allow_unsafe_jscode=True,  # Allow JavaScript code execution
-        fit_columns_on_grid_load=True,  # Automatically fit columns on load
-        height=1000,  # Set grid height to 500 pixels
-        width='100%',  # Set grid width to 100% of the available space
-        theme='streamlit',
-        custom_css=custom_css   
-    )
-except Exception as ex:
-    st.error(f"An error occurred: {ex}")
+    # Render the AG-Grid in Streamlit
+    try:
+        AgGrid(
+            df_with_totals_tab2,
+            gridOptions=grid_options_tab2,
+            enable_enterprise_modules=True,
+            allow_unsafe_jscode=True,  # Allow JavaScript code execution
+            fit_columns_on_grid_load=True,  # Automatically fit columns on load
+            height=1000,  # Set grid height to 1000 pixels
+            width='100%',  # Set grid width to 100% of the available space
+            theme='streamlit',
+            custom_css=custom_css   
+        )
+    except Exception as ex:
+        st.error(f"An error occurred: {ex}")

@@ -258,7 +258,7 @@ absences_grouped = expanded_absences.groupby(['PersonalNumberKey', 'AbsenceDate'
     'AbsenceStartTime': 'first',
     'AbsenceEndTime': 'last'
 }).reset_index()
-
+absences_grouped['AbsenceDurationHours'] = absences_grouped['AbsenceDurationHours'].clip(upper=8)
 
 absences_grouped[absences_grouped['PersonalNumberKey'] == '969_25367']
 # Group shifts by PersonalNumberKey and ShiftDate to find total shift hours per day per resource
@@ -305,7 +305,7 @@ sfshifts_merged['ShiftDurationMinutesAdjusted'] = sfshifts_merged['ShiftDuration
 sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate'])
 
 check= sfshifts_merged[sfshifts_merged['PersonalNumberKey'] == '969_25367']
-check
+
 # Identify duplicates based on the specified subset of columns
 duplicate_mask = appointments.duplicated(subset=[
     'Shop[GT_CountryCode__c]',
@@ -340,10 +340,9 @@ appointments = appointments.drop_duplicates(subset=[
     'ApptEndTime'
 ], keep='first')
 # Calculate the total number of 5-minute slots available per shop and date
-shift_slots = sfshifts_merged.groupby(['GT_ShopCode__c', 'Shop[Name]', 'date'])[['ShiftDurationMinutesAdjusted', 'ShiftDurationHours']].sum().reset_index()
+shift_slots = sfshifts_merged.groupby(['GT_ShopCode__c', 'Shop[Name]', 'date'])[['ShiftDurationMinutesAdjusted', 'ShiftDurationHours','AbsenceDurationHours']].sum().reset_index()
 shift_slots['TotalSlots'] = shift_slots['ShiftDurationMinutesAdjusted'] / 5
 shift_slots['TotalSlots_gross'] = shift_slots['ShiftDurationHours']*60 / 5
-
 
 # Filter appointments within August
 appointments_filtered = appointments[(appointments['ApptStartTime'] >= start_date) & (appointments['ApptEndTime'] <= end_date)].copy()
@@ -414,8 +413,10 @@ shift_slots['OpenSlots'] = shift_slots['OpenSlots'].apply(lambda x: max(x, 0))
 # Check for rows where OpenSlots was negative (if any remain)
 negative_open_slots = shift_slots[shift_slots['OpenSlots'] < 0]
 shift_slots['OpenHours'] = (shift_slots['OpenSlots'] * 5) / 60
+shift_slots['BlockedHours'] = shift_slots['AbsenceDurationHours'] 
 shift_slots['BookedHours'] = (shift_slots['TotalBookedSlots'] * 5) / 60
 shift_slots['TotalHours'] = (shift_slots['TotalSlots_gross'] * 5) / 60
+shift_slots['BlockedHoursPercentage'] = shift_slots['AbsenceDurationHours']/shift_slots['TotalHours']*100
 shift_slots['SaturationPercentage'] = (shift_slots['BookedHours'] / shift_slots['TotalHours']) * 100
 shift_slots['SaturationPercentage'] = shift_slots['SaturationPercentage'].clip(lower=0, upper=100)
 
@@ -434,12 +435,11 @@ shift_slots = shift_slots.sort_values(by='date')
 shift_slots = shift_slots.merge(region_mapping[['CODE', 'REGION', 'AREA']], left_on='GT_ShopCode__c', right_on='CODE', how='left')
 shift_slots.rename(columns={'REGION': 'Region', 'AREA': 'Area'}, inplace=True)
 shift_slots = shift_slots.drop(columns=['CODE'])
-a=shift_slots[(shift_slots['GT_ShopCode__c']=='969') &
+a=shift_slots[(shift_slots['GT_ShopCode__c']=='166') &
     (shift_slots['date'] >= pd.Timestamp('2024-09-05')) &
     (shift_slots['date'] < pd.Timestamp('2024-09-06'))]
 
-print(a[['TotalSlots_gross', 'TotalSlots', 'OpenHours', 'ShiftDurationMinutesAdjusted', 'BookedHours',  'Shop[Name]', 'date']])
-shift_slots.columns
+print(a[['TotalSlots_gross', 'TotalHours', 'OpenHours', 'BlockedHours', 'BlockedHoursPercentage', 'BookedHours',  'Shop[Name]', 'date']])
 # Define the filename and path for the Excel file
 output_file_path = 'shiftslots.xlsx'
 
