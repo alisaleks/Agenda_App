@@ -202,33 +202,40 @@ absences['AbsenceDate'] = absences['Start'].dt.date
 # Modify the filtering logic to account for absences that overlap with the start_date and end_date
 absences_filtered = absences[(absences['End'] >= start_date) & (absences['Start'] <= end_date)]
 
-# Update the expand_multiday_absences function
 def expand_multiday_absences(row):
     start_date = row['Start'].normalize()
     end_date = row['End'].normalize()
     expanded_records = []
     current_date = start_date
 
-    # Define workday hours
-    workday_start_hour = 7
-    workday_end_hour = 19
+    # Set the time threshold (20:00)
+    evening_cutoff = pd.Timestamp(current_date).replace(hour=20, minute=0, second=0)
 
     while current_date <= end_date:
         if current_date == start_date and current_date == end_date:
             # Absence starts and ends on the same day
-            hours = (row['End'] - row['Start']).total_seconds() / 3600
+            if row['Start'] > evening_cutoff:
+                hours = 0  # No absence counted if start is after 20:00
+            else:
+                hours = (row['End'] - row['Start']).total_seconds() / 3600
         elif current_date == start_date:
-            # First day: Calculate hours from start time to the end of the workday
-            end_of_day = current_date + timedelta(hours=workday_end_hour)
-            hours = min((end_of_day - row['Start']).total_seconds() / 3600, workday_end_hour - row['Start'].hour)
+            # First day: Calculate hours from start time to midnight
+            if row['Start'] > evening_cutoff:
+                hours = 0  # No absence counted if start is after 20:00
+            else:
+                end_of_day = pd.Timestamp.combine(current_date + timedelta(days=1), pd.Timestamp.min.time())  # Midnight of the next day
+                hours = (end_of_day - row['Start']).total_seconds() / 3600
         elif current_date == end_date:
-            # Last day: Calculate hours from start of workday to end time
-            start_of_day = current_date + timedelta(hours=workday_start_hour)
-            hours = min((row['End'] - start_of_day).total_seconds() / 3600, row['End'].hour - workday_start_hour)
+            # Last day: Calculate hours from midnight to the end time
+            start_of_day = pd.Timestamp.combine(current_date, pd.Timestamp.min.time())  # Midnight of the current day
+            hours = (row['End'] - start_of_day).total_seconds() / 3600
         else:
-            # Full day: Full workday hours for days entirely within the absence period
-            hours = workday_end_hour - workday_start_hour
+            # Full day: Assign 24 hours for full days within the absence period, capped at 8 hours
+            hours = 24
 
+        # Cap hours to a maximum of 8 per day
+        hours = min(8, hours)
+        
         expanded_records.append({
             'PersonalNumberKey': row['PersonalNumberKey'],
             'AbsenceDate': current_date.date(),
@@ -244,6 +251,7 @@ def expand_multiday_absences(row):
     
     return expanded_records
 
+
 # Filter absences to include any absence overlapping with the period
 expanded_absences = absences_filtered.apply(expand_multiday_absences, axis=1)
 expanded_absences = pd.DataFrame([record for sublist in expanded_absences for record in sublist])
@@ -258,9 +266,7 @@ absences_grouped = expanded_absences.groupby(['PersonalNumberKey', 'AbsenceDate'
     'AbsenceStartTime': 'first',
     'AbsenceEndTime': 'last'
 }).reset_index()
-absences_grouped['AbsenceDurationHours'] = absences_grouped['AbsenceDurationHours'].clip(upper=8)
-
-absences_grouped[absences_grouped['PersonalNumberKey'] == '969_25367']
+absences_grouped[absences_grouped['Resource.RelatedRecord.GT_StoreCode__c'] == '049']
 # Group shifts by PersonalNumberKey and ShiftDate to find total shift hours per day per resource
 shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate']).agg({
     'ShiftDurationHours': 'sum',  # Sum of absence duration hours
@@ -416,7 +422,7 @@ shift_slots['OpenHours'] = (shift_slots['OpenSlots'] * 5) / 60
 shift_slots['BlockedHours'] = shift_slots['AbsenceDurationHours'] 
 shift_slots['BookedHours'] = (shift_slots['TotalBookedSlots'] * 5) / 60
 shift_slots['TotalHours'] = (shift_slots['TotalSlots_gross'] * 5) / 60
-shift_slots['BlockedHoursPercentage'] = shift_slots['AbsenceDurationHours']/shift_slots['TotalHours']*100
+shift_slots['BlockedHoursPercentage'] = (shift_slots['BlockedHours'] / shift_slots['TotalHours']) * 100
 shift_slots['SaturationPercentage'] = (shift_slots['BookedHours'] / shift_slots['TotalHours']) * 100
 shift_slots['SaturationPercentage'] = shift_slots['SaturationPercentage'].clip(lower=0, upper=100)
 
