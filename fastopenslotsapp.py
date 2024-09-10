@@ -256,7 +256,7 @@ hcp_data = hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceResource__r.
     BlockedHours=('AbsenceDurationHours', 'sum'),
 ).reset_index()
 
-tab1, tab2, tab3, tab4 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage", "MTD/MTG", "HCP View"]])
+tab1, tab2, tab3, tab4 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage", "MTD/MTG", "HCP View"])
 
 with tab1:        
     # Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
