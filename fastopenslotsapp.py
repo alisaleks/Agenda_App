@@ -256,7 +256,7 @@ hcp_data = hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceResource__r.
     BlockedHours=('AbsenceDurationHours', 'sum'),
 ).reset_index()
 
-tab1, tab2, tab3 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage", "HCM View"])
+tab1, tab2, tab3, tab4 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage", "MTD/MTG", "HCP View"]])
 
 with tab1:        
     # Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
@@ -546,16 +546,49 @@ with tab2:
         )
     except Exception as ex:
         st.error(f"An error occurred: {ex}")
-# Use st.columns to position filters side by side
+
+# Custom CSS for the AG-Grid table
+custom_css = {
+    ".ag-header-cell": {
+        "background-color": "#cc0641 !important",  # Ensure entire cell background changes
+        "color": "white !important",
+        "font-weight": "bold",
+        "padding": "4px"  # Reduce padding to make headers more compact
+    },
+    ".ag-header-group-cell": {  # Style for merged/group headers
+        "background-color": "#cc0641 !important",
+        "color": "white !important",
+        "font-weight": "bold",
+    },
+    ".ag-cell": {
+        "padding": "2px",  # Reduce padding inside cells to make them more compact
+        "font-size": "12px"  # Reduce font size for a more compact look
+    },
+    ".ag-header": {
+        "height": "35px",  # Reduce header height
+    },
+    ".ag-theme-streamlit .ag-row": {
+        "max-height": "30px"  # Adjust max height for rows to be more compact
+    },
+    ".ag-theme-streamlit .ag-root-wrapper": {
+        "border": "2px solid #cc0641",  # Add outer border with specified color
+        "border-radius": "5px"  # Optional: Rounded corners for the outer border
+    }
+}
+
+# Use st.columns to position filters side by side in default Streamlit boxes
 col1, col2 = st.columns(2)
 
-# Add the "Select view" filter in the first column
 with col1:
-    view_type = st.radio("Select view:", ['Available Hours', 'Blocked Hours'])
+    # Select View filter with smaller title using custom markdown
+    st.markdown("<h4>Select View:</h4>", unsafe_allow_html=True)  # h4 is smaller than h3 (header)
+    view_type = st.radio("", ['Available Hours', 'Blocked Hours'], key="view_type")
 
-# Add the "Select date range" filter in the second column
 with col2:
-    date_range_type = st.radio("Select date range:", ['Month to Go', 'Total of Month'])
+    # Select Date Range filter with smaller title using custom markdown
+    st.markdown("<h4>Select Date Range:</h4>", unsafe_allow_html=True)
+    date_range_type = st.radio("", ['Month to Go', 'Total of Month'], key="date_range_type")
+
 
 # Define the starting and ending dates for the current month, capping it to today
 today = pd.Timestamp(datetime.now().date())
@@ -601,7 +634,7 @@ else:
     for day in all_days_in_month:
         day_data = hcp_data[hcp_data['ShiftDate'] <= day]
         day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
-        day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Total of Month']
+        day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Month to Date']
         pivot_data.append(day_sum)
 
 # Merge the daily data into one DataFrame to display, filling blanks with zeros
@@ -669,16 +702,149 @@ gb_tab3.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns',
 grid_options_tab3 = gb_tab3.build()
 
 # Render the AG-Grid in Streamlit with full width and custom styling
-try:
-    AgGrid(
-        df_with_totals,
-        gridOptions=grid_options_tab3,
-        enable_enterprise_modules=True,
-        allow_unsafe_jscode=True,  # Allow JavaScript code execution
-        fit_columns_on_grid_load=True,  # Automatically fit columns on load
-        height=1000,  # Set grid height to 1000 pixels
-        width='100%',  # Set grid width to 100% of the available space
-        theme='streamlit'
+AgGrid(
+    df_with_totals,
+    gridOptions=grid_options_tab3,
+    enable_enterprise_modules=True,
+    allow_unsafe_jscode=True,  # Allow JavaScript code execution
+    fit_columns_on_grid_load=True,  # Automatically fit columns on load
+    height=1000,  # Set grid height to 1000 pixels
+    width='100%',  # Set grid width to 100% of the available space
+    theme='streamlit',
+    custom_css=custom_css  # Apply custom CSS
+)
+
+
+
+
+with tab4:
+    # Adjust the pivot table to use BlockedHoursPercentage
+    pivot_table_tab2 = aggregated_data.pivot_table(
+        index=['Shop[Name]'],
+        columns=['date', 'weekday'],
+        values='BlockedHoursPercentage',
+        aggfunc='mean',
+        fill_value=0
     )
-except Exception as ex:
-    st.error(f"An error occurred: {ex}")
+
+    # Flatten the columns for display
+    pivot_table_tab2.columns = [f"{col[0]}_{col[1]}" for col in pivot_table_tab2.columns.to_flat_index()]
+    pivot_table_tab2_reset = pivot_table_tab2.reset_index()
+
+    # Create the DataFrame for AgGrid
+    df_tab2 = pivot_table_tab2_reset
+
+    # Ensure no spaces in field names in df, replacing spaces with underscores or removing them
+    df_tab2.columns = [col.replace(' ', '_') for col in df_tab2.columns]
+
+    # JavaScript code for custom cell styling
+    js_code = JsCode("""
+    function(params) {
+        var blockedHoursValue = params.value;
+
+        if (blockedHoursValue === 0) {
+            return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for BlockedHoursPercentage = 0
+        } else if (blockedHoursValue > 0 && blockedHoursValue <= 50) {
+            return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for BlockedHoursPercentage between 0 and 50
+        } else if (blockedHoursValue > 50) {
+            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for BlockedHoursPercentage > 50
+        } else {
+            return null;  // Default style
+        }
+    }
+    """)
+
+    custom_css = {
+        ".ag-header-cell": {
+            "background-color": "#cc0641 !important",  # Ensure entire cell background changes
+            "color": "white !important",
+            "font-weight": "bold",
+            "padding": "4px"  # Reduce padding to make headers more compact
+        },
+        ".ag-header-group-cell": {  # Style for merged/group headers
+            "background-color": "#cc0641 !important",
+            "color": "white !important",
+            "font-weight": "bold",
+        },
+        ".ag-cell": {
+            "padding": "2px",  # Reduce padding inside cells to make them more compact
+            "font-size": "12px"  # Reduce font size for a more compact look
+        },
+        ".ag-header": {
+            "height": "35px",  # Reduce header height
+        },
+        ".ag-theme-streamlit .ag-row": {
+            "max-height": "30px"  # Adjust max height for rows to be more compact
+        },
+        ".ag-theme-streamlit .ag-menu-option-text, .ag-theme-streamlit .ag-filter-body-wrapper, .ag-theme-streamlit .ag-input-wrapper, .ag-theme-streamlit .ag-icon": {
+            "font-size": "6px !important"  # Reduce font size for filter options and ensure it's applied
+        },
+        ".ag-theme-streamlit .ag-root-wrapper": {
+            "border": "2px solid #cc0641",  # Add outer border with specified color
+            "border-radius": "5px"  # Optional: Rounded corners for the outer border
+        }
+    }
+
+    # Example column definition with flex and resizable properties
+    columnDefs_tab2 = [
+        {
+            "headerName": "Shop Name",
+            "field": "Shop[Name]", 
+            "resizable": True,
+            "flex": 2,  # Adjust flex value to make this column wider
+            "minWidth": 150,  # Set a minimum width for columns
+            "filter": 'agTextColumnFilter',  # Set filter type to text for shop name
+        },
+    ]
+
+    # Append dynamic column definitions for BlockedHoursPercentage
+    for column in df_tab2.columns[1:]:  # Start from 1 to skip Shop[Name]
+        headerName = column.split('_')[0] + ' (' + column.split('_')[1] + ')'
+        columnDefs_tab2.append({
+            "field": column,
+            "headerName": headerName,
+            "valueFormatter": "(x > 100 ? 100 : x.toFixed(1)) + ' %'",  # Cap at 100 and add %
+            "resizable": True,
+            "flex": 1,
+            "cellStyle": js_code
+        })
+
+    # Calculate totals for BlockedHoursPercentage
+    total_row_tab2 = {'Shop[Name]': 'Total'}
+    for col in df_tab2.columns[1:]:
+        total_row_tab2[col] = df_tab2[col].mean()
+
+    # Convert total_row to DataFrame and append to the original data
+    total_df_tab2 = pd.DataFrame(total_row_tab2, index=[0])
+    df_with_totals_tab2 = pd.concat([df_tab2, total_df_tab2], ignore_index=True)
+
+    # Configure GridOptionsBuilder with JavaScript code
+    gb_tab2 = GridOptionsBuilder.from_dataframe(df_with_totals_tab2)
+
+    for column in df_tab2.columns[1:]:
+        gb_tab2.configure_column(column, cellStyle=js_code)
+
+    # Allow columns to fill the width and use autoHeight for rows
+    gb_tab2.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+
+    # Build grid options
+    grid_options_tab2 = gb_tab2.build()
+
+    # Set the columnDefs in the grid_options dictionary
+    grid_options_tab2['columnDefs'] = columnDefs_tab2
+
+    # Render the AG-Grid in Streamlit
+    try:
+        AgGrid(
+            df_with_totals_tab2,
+            gridOptions=grid_options_tab2,
+            enable_enterprise_modules=True,
+            allow_unsafe_jscode=True,  # Allow JavaScript code execution
+            fit_columns_on_grid_load=True,  # Automatically fit columns on load
+            height=1000,  # Set grid height to 1000 pixels
+            width='100%',  # Set grid width to 100% of the available space
+            theme='streamlit',
+            custom_css=custom_css   
+        )
+    except Exception as ex:
+        st.error(f"An error occurred: {ex}")
