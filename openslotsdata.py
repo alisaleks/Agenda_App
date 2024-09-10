@@ -371,7 +371,7 @@ shift_slots['TotalSlots_gross'] = shift_slots['ShiftDurationHours']*60 / 5
 # Filter appointments within August
 appointments_filtered = appointments[(appointments['ApptStartTime'] >= start_date) & (appointments['ApptEndTime'] <= end_date)].copy()
 
-# Example: Deleting unused DataFrames to free up memory
+#Deleting unused DataFrames to free up memory
 del sfshifts, resources, appointments, absences
 
 # Fill NA in categories with 'First Visit'
@@ -519,3 +519,43 @@ shift_slots = shift_slots.sort_values(by='date')
 # Save to Excel
 output_file_path = 'shiftslots.xlsx'
 shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')
+
+
+#TAB3
+
+# Reading HCMShifts CSV
+hcm_file = 'HCMShifts.csv'
+hcm_columns_to_string = {
+    'Shop[Shop Code - Descr]': str,
+    'Unique Employee[Employee Full Name]': str,
+    'Unique Employee[Employee Person Number]': str
+}
+
+HCMdata = pd.read_csv(hcm_file, engine='python', dtype=hcm_columns_to_string,  usecols=['Shop[Shop Code - Descr]', 'Unique Employee[Employee Full Name]',
+       'Unique Employee[Employee Person Number]', 'Calendar[Date]',
+       'Calendar[ISO Week]', 'Calendar[ISO Year]', 
+       '[Audiologist_FTE]'])
+
+
+# Extract the first three characters from Shop Code and create the new key
+HCMdata['ShopCode_3char'] = HCMdata['Shop[Shop Code - Descr]'].str[:3]
+HCMdata['Key'] = HCMdata['ShopCode_3char'] + '_' + HCMdata['Unique Employee[Employee Person Number]'].astype(str)
+HCMdata['Calendar[Date]'] = pd.to_datetime(HCMdata['Calendar[Date]'] , errors='coerce')
+HCMdata = HCMdata[(HCMdata['Calendar[Date]'] >= start_date) & (HCMdata['Calendar[Date]'] <= end_date)].copy()
+# Multiplying by 8 to get day hours
+HCMdata['[Audiologist_FTE]'] = HCMdata['[Audiologist_FTE]'] * 8
+hcm_merged_df = pd.merge(
+    sfshifts_merged,
+    HCMdata,
+    left_on=['PersonalNumberKey', 'ShiftDate'],  
+    right_on=['Key', 'Calendar[Date]'],          
+    how='outer'  
+)
+
+# Rename columns for clarity
+hcm_merged_df.rename(columns={'[Audiologist_FTE]': 'FTE', 'Calendar[Date]': 'Date'}, inplace=True)
+hcm_merged_df['ShiftDurationHours']=hcm_merged_df['ShiftDurationHours'].fillna(0)
+
+# Calculate the difference in durations
+hcm_merged_df['Delta HCM-SF'] = hcm_merged_df['FTE'].fillna(0) - hcm_merged_df['ShiftDurationHours'].fillna(0)
+hcm_merged_df.head()
