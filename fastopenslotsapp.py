@@ -215,7 +215,7 @@ else:
     change_from_last_week = 0  # Or handle differently, depending on your needs
 
 # Calculate the start and end dates for the selected ISO week
-selected_week_start = pd.Timestamp(selected_iso_year, 1, 1) + pd.offsets.Week(weekday=0) * (iso_week_filter - 1)
+selected_week_start = pd.Timestamp(selected_iso_year, 1, 1) + pd.offsets.Week(weekday=0) * (int(iso_week_filter) - 1)
 selected_week_end = selected_week_start + pd.offsets.Week(weekday=6)
 today = pd.Timestamp(datetime.now().date())
 end_of_month = today.replace(day=1) + pd.offsets.MonthEnd(0)
@@ -246,9 +246,7 @@ check= aggregated_data[(aggregated_data['GT_ShopCode__c'] == '240')]
 
 tab1, tab2 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage"])
 
-with tab1:
-    st.write("Open Hours vs Total Hours")
-        
+with tab1:        
     # Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
     pivot_table = aggregated_data.pivot_table(
         index=['Shop[Name]'],
@@ -405,8 +403,6 @@ with tab1:
     except Exception as ex:
         st.error(f"An error occurred: {ex}")
 with tab2:
-    st.write("Blocked Hours Percentage")
-
     # Adjust the pivot table to use BlockedHoursPercentage
     pivot_table_tab2 = aggregated_data.pivot_table(
         index=['Shop[Name]'],

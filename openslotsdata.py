@@ -142,17 +142,21 @@ absences.rename(columns={
 # Load regionmapping data
 region_mapping_path = 'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/regionmapping.xlsx'
 region_mapping = load_excel(region_mapping_path)
+region_mapping = region_mapping[region_mapping['SYN'] == 'Y']
+
 sfshifts['StartTime'] = pd.to_datetime(sfshifts['Shift[StartTime]'], errors='coerce')
 sfshifts['EndTime'] = pd.to_datetime(sfshifts['Shift[EndTime]'], errors='coerce')
 start_date = datetime(2024, 9, 1)
 end_date = datetime(2024, 10, 6)
 shifts_filtered = sfshifts[(sfshifts['StartTime'] >= start_date) & (sfshifts['EndTime'] <= end_date)].copy()
+# Check if shop '978' exists after filtering shifts
 
 # Rename columns to match
 shifts_filtered.rename(columns={
     'Shop[GT_ShopCode__c]': 'GT_ShopCode__c',
     'Service Resource[Name]': 'GT_ServiceResource__r.Name'
 }, inplace=True)
+print(shifts_filtered[shifts_filtered['GT_ShopCode__c'] == '978'])
 
 resources.rename(columns={
     'Shop[GT_ShopCode__c]': 'GT_ShopCode__c'
@@ -165,32 +169,45 @@ appointments['ApptsLastModifiedDate'] = pd.to_datetime(appointments['Service App
 # Drop original datetime columns
 shifts_filtered.drop(columns=['Shift[StartTime]', 'Shift[EndTime]', 'Shift[LastModifiedDate]'], inplace=True)
 appointments.drop(columns=['Service Appointment[SchedStartTime]', 'Service Appointment[SchedEndTime]', 'Service Appointment[LastModifiedDate]'], inplace=True)
+
+shifts_filtered['PersonalNumberKey'] = shifts_filtered['GT_ShopCode__c'] + '_' + shifts_filtered['Service Resource[GT_PersonalNumber__c]']
+
 # Convert to datetime with out-of-bound handling for specific columns
 resources['EffectiveEndDate'] = resources['Service Territory Member[EffectiveEndDate]'].apply(handle_out_of_bound_dates)
 resources['EffectiveStartDate'] = resources['Service Territory Member[EffectiveStartDate]'].apply(handle_out_of_bound_dates)
 
 # Add a date column
 shifts_filtered['date'] = shifts_filtered['StartTime'].dt.strftime('%d/%m/%Y')
-
+shifts_filtered['ShiftDate'] = shifts_filtered['StartTime'].dt.date
 # Directly extract ISO week and year from StartTime
 shifts_filtered['iso_week'] = shifts_filtered['StartTime'].dt.isocalendar().week
 shifts_filtered['iso_year'] = shifts_filtered['StartTime'].dt.isocalendar().year
 
 shifts_filtered['StartDateHour'] = shifts_filtered['StartTime'].dt.strftime('%Y-%m-%d %H:00:00')
 shifts_filtered['Key'] = shifts_filtered['GT_ShopCode__c'] + '_' + shifts_filtered['GT_ServiceResource__r.Name'] + '_' + shifts_filtered['StartDateHour']
+#duplicate treatment
 duplicates = shifts_filtered[shifts_filtered.duplicated(subset=['Key'], keep=False)]
 shifts_filtered = shifts_filtered.sort_values(by=['Key', 'LastModifiedDate'], ascending=[True, False])
 shifts_filtered = shifts_filtered.drop_duplicates(subset=['Key'], keep='first')
+
+shifts_filtered['ShiftDurationHours'] = (shifts_filtered['EndTime'] - shifts_filtered['StartTime']).dt.total_seconds() / 3600
+
 shifts_filtered['ShopResourceKey'] = shifts_filtered['GT_ShopCode__c'] + shifts_filtered['Shift[ServiceResourceId]']
 resources['ShopResourceKey'] = resources['GT_ShopCode__c'] + resources['Service Territory Member[ServiceResourceId]']
-
 resources['IsActive'] = resources.apply(is_active, axis=1, args=(start_date, end_date))
-active_resources = resources[resources['IsActive']]
-shifts_filtered = shifts_filtered[shifts_filtered['ShopResourceKey'].isin(active_resources['ShopResourceKey'])]
 
-shifts_filtered['PersonalNumberKey'] = shifts_filtered['GT_ShopCode__c'] + '_' + shifts_filtered['Service Resource[GT_PersonalNumber__c]']
-shifts_filtered['ShiftDate'] = shifts_filtered['StartTime'].dt.date
-shifts_filtered['ShiftDurationHours'] = (shifts_filtered['EndTime'] - shifts_filtered['StartTime']).dt.total_seconds() / 3600
+# Merge active resource information into the shifts data to ensure all resources are included
+shifts_filtered = shifts_filtered.merge(
+    resources[['ShopResourceKey', 'IsActive']], 
+    on='ShopResourceKey', 
+    how='left'
+)
+
+# Set ShiftDurationHours to 0 for inactive resources
+shifts_filtered.loc[shifts_filtered['IsActive'] == False, 'ShiftDurationHours'] = 0
+
+shifts_filtered['ShiftDurationHours'] = shifts_filtered['ShiftDurationHours'].fillna(0)
+
 
 absences['Start'] = pd.to_datetime(absences['Start'], errors='coerce')
 absences['End'] = pd.to_datetime(absences['End'], errors='coerce')
@@ -266,7 +283,7 @@ absences_grouped = expanded_absences.groupby(['PersonalNumberKey', 'AbsenceDate'
     'AbsenceStartTime': 'first',
     'AbsenceEndTime': 'last'
 }).reset_index()
-absences_grouped[absences_grouped['Resource.RelatedRecord.GT_StoreCode__c'] == '049']
+absences_grouped[absences_grouped['Resource.RelatedRecord.GT_StoreCode__c'] == '86A']
 # Group shifts by PersonalNumberKey and ShiftDate to find total shift hours per day per resource
 shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate']).agg({
     'ShiftDurationHours': 'sum',  # Sum of absence duration hours
@@ -350,6 +367,7 @@ shift_slots = sfshifts_merged.groupby(['GT_ShopCode__c', 'Shop[Name]', 'date'])[
 shift_slots['TotalSlots'] = shift_slots['ShiftDurationMinutesAdjusted'] / 5
 shift_slots['TotalSlots_gross'] = shift_slots['ShiftDurationHours']*60 / 5
 
+
 # Filter appointments within August
 appointments_filtered = appointments[(appointments['ApptStartTime'] >= start_date) & (appointments['ApptEndTime'] <= end_date)].copy()
 
@@ -404,50 +422,100 @@ shift_slots['date'] = pd.to_datetime(shift_slots['date'], format='%d/%m/%Y', err
 total_booked_slots_by_date['date'] = pd.to_datetime(total_booked_slots_by_date['date'], errors='coerce')
 
 grouped_df = total_booked_slots_by_date.groupby(['GT_ShopCode__c', 'date']).agg({'Count': 'sum'}).reset_index()
+
+# Step 1: Generate all dates within the specified range
+date_range = pd.date_range(start=start_date, end=end_date, freq='B')  # weekdays only
+
+# Step 2: Create a DataFrame for all combinations of shop codes and the date range
+shops_dates = pd.MultiIndex.from_product(
+    [region_mapping['CODE'].unique(), date_range],
+    names=['GT_ShopCode__c', 'date']
+).to_frame(index=False)
+
+# Step 3: Include Region, Area, and Shop[Name] information in the shops_dates DataFrame
+shops_dates = pd.merge(
+    shops_dates,
+    region_mapping[['CODE', 'REGION', 'AREA', 'DESCR']],  # Include Region, Area, and Shop[Name]
+    left_on='GT_ShopCode__c',
+    right_on='CODE',
+    how='left'
+)
+# Rename columns to match the expected output
+shops_dates.rename(columns={
+    'REGION': 'Region',
+    'AREA': 'Area',
+    'DESCR': 'Shop[Name]'
+}, inplace=True)
+
+# Step 4: Drop unnecessary columns
+shops_dates.drop(columns=['CODE'], inplace=True)
+
+shift_slots = pd.merge(
+    shops_dates,
+    shift_slots,
+    on=['GT_ShopCode__c', 'date'],
+    how='left', 
+    suffixes=('', '_drop')  # Use '_drop' as the suffix for the columns you want to drop
+)
+shift_slots = shift_slots.loc[:, ~shift_slots.columns.str.endswith('_drop')]
+
+# Step 4: Fill missing values for any shops that had no shifts
+shift_slots['ShiftDurationHours'] = shift_slots['ShiftDurationHours'].fillna(0)
+shift_slots['ShiftDurationMinutesAdjusted'] = shift_slots['ShiftDurationMinutesAdjusted'].fillna(0)
+shift_slots['AbsenceDurationHours'] = shift_slots['AbsenceDurationHours'].fillna(0)
+shift_slots['TotalSlots'] = shift_slots['TotalSlots'].fillna(0)
+shift_slots['TotalSlots_gross'] = shift_slots['TotalSlots_gross'].fillna(0)
+
+
+# Test shop 'C07' to check final output
+a = shift_slots[shift_slots['GT_ShopCode__c'] == 'C07']
+
+print(a[['TotalSlots_gross', 'TotalHours','ShiftDurationHours', 'date',  'Region', 'Area', 'Shop[Name]']])
+# Step 5: Recalculate `TotalBookedSlots` based on the total booked slots by date
+grouped_df = total_booked_slots_by_date.groupby(['GT_ShopCode__c', 'date']).agg({'Count': 'sum'}).reset_index()
 shift_slots = pd.merge(
     shift_slots, 
     grouped_df, 
     on=['GT_ShopCode__c', 'date'], 
     how='left'
 )
+shift_slots.columns
+# Fill missing values for TotalBookedSlots and perform necessary calculations
 shift_slots['TotalBookedSlots'] = shift_slots['Count'].fillna(0)
 shift_slots.drop(columns=['Count'], inplace=True)
 
 shift_slots['OpenSlots'] = shift_slots['TotalSlots'] - shift_slots['TotalBookedSlots']
 shift_slots['OpenSlots'] = shift_slots['OpenSlots'].apply(lambda x: max(x, 0))
 
-# Check for rows where OpenSlots was negative (if any remain)
-negative_open_slots = shift_slots[shift_slots['OpenSlots'] < 0]
+# Step 6: Additional Calculations
 shift_slots['OpenHours'] = (shift_slots['OpenSlots'] * 5) / 60
-shift_slots['BlockedHours'] = shift_slots['AbsenceDurationHours'] 
+shift_slots['BlockedHours'] = shift_slots['AbsenceDurationHours']
 shift_slots['BookedHours'] = (shift_slots['TotalBookedSlots'] * 5) / 60
 shift_slots['TotalHours'] = (shift_slots['TotalSlots_gross'] * 5) / 60
 shift_slots['BlockedHoursPercentage'] = (shift_slots['BlockedHours'] / shift_slots['TotalHours']) * 100
 shift_slots['SaturationPercentage'] = (shift_slots['BookedHours'] / shift_slots['TotalHours']) * 100
 shift_slots['SaturationPercentage'] = shift_slots['SaturationPercentage'].clip(lower=0, upper=100)
 
+
+shift_slots['OpenHours'] = shift_slots['OpenSlots'].fillna(0)
+shift_slots['BlockedHours'] = shift_slots['AbsenceDurationHours'].fillna(0)
+shift_slots['BookedHours'] = shift_slots['TotalBookedSlots'].fillna(0)
+shift_slots['TotalHours'] = shift_slots['TotalSlots_gross'].fillna(0)
+shift_slots['BlockedHoursPercentage'] = shift_slots['BlockedHoursPercentage'].fillna(0)
+shift_slots['SaturationPercentage'] = shift_slots['SaturationPercentage'].fillna(0)
 # Add weekday name and ISO week
 shift_slots['date'] = pd.to_datetime(shift_slots['date'], format='%d/%m/%Y')
 shift_slots['day'] = shift_slots['date'].dt.day
 shift_slots['weekday'] = shift_slots['date'].dt.day_name()
 shift_slots['iso_week'] = shift_slots['date'].dt.isocalendar().week
 shift_slots['month'] = shift_slots['date'].dt.strftime('%B')
-# Remove Sundays from the shift_slots DataFrame
+
+# Remove Sundays if needed
 shift_slots = shift_slots[shift_slots['weekday'] != 'Sunday']
-check= shift_slots[shift_slots['GT_ShopCode__c'] == '240']
-# Sort the shift_slots DataFrame by 'date' to ensure the correct order of days
+
+# Sort the shift_slots DataFrame by 'date'
 shift_slots = shift_slots.sort_values(by='date')
-# Merge cleaned_data with region_mapping to update 'Region_Descr'
-shift_slots = shift_slots.merge(region_mapping[['CODE', 'REGION', 'AREA']], left_on='GT_ShopCode__c', right_on='CODE', how='left')
-shift_slots.rename(columns={'REGION': 'Region', 'AREA': 'Area'}, inplace=True)
-shift_slots = shift_slots.drop(columns=['CODE'])
-a=shift_slots[(shift_slots['GT_ShopCode__c']=='166') &
-    (shift_slots['date'] >= pd.Timestamp('2024-09-05')) &
-    (shift_slots['date'] < pd.Timestamp('2024-09-06'))]
 
-print(a[['TotalSlots_gross', 'TotalHours', 'OpenHours', 'BlockedHours', 'BlockedHoursPercentage', 'BookedHours',  'Shop[Name]', 'date']])
-# Define the filename and path for the Excel file
+# Save to Excel
 output_file_path = 'shiftslots.xlsx'
-
-# Export the DataFrame to Excel
-shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')  # You can also use 'xlsxwriter' if you prefer
+shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')
