@@ -546,144 +546,139 @@ with tab2:
         )
     except Exception as ex:
         st.error(f"An error occurred: {ex}")
-with tab3:
-    # Add a radio button to toggle between "Available Hours" and "Blocked Hours"
+# Use st.columns to position filters side by side
+col1, col2 = st.columns(2)
+
+# Add the "Select view" filter in the first column
+with col1:
     view_type = st.radio("Select view:", ['Available Hours', 'Blocked Hours'])
 
-    # Add another radio button to toggle between "Month to Go" and "Total of Month"
+# Add the "Select date range" filter in the second column
+with col2:
     date_range_type = st.radio("Select date range:", ['Month to Go', 'Total of Month'])
 
-    # Define the starting and ending dates for the current month
-    today = pd.Timestamp(datetime.now().date())
-    start_of_month = today.replace(day=1)
-    end_of_month = today + pd.offsets.MonthEnd(0)
+# Define the starting and ending dates for the current month, capping it to today
+today = pd.Timestamp(datetime.now().date())
+start_of_month = today.replace(day=1)
 
-    # Get all the days of the current month
-    all_days_in_month = pd.date_range(start=start_of_month, end=end_of_month)
+# Get all the days of the current month up to today, excluding Sundays
+all_days_in_month = pd.date_range(start=start_of_month, end=today)
+all_days_in_month = all_days_in_month[all_days_in_month.weekday != 6]  # Remove Sundays (6 represents Sunday)
 
-    # Filter the columns based on the selected view type
-    if view_type == 'Available Hours':
-        column_values = 'AvailableHours'
-        color_coding_js = JsCode("""
-        function(params) {
-            var hours = params.value;
-            if (hours === 0) {
-                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for AvailableHours = 0
-            } else if (hours > 0 && hours < 8) {
-                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for AvailableHours > 0 and < 8
-            } else if (hours >= 8) {
-                return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for AvailableHours >= 8
-            }
-            return null;
-        }
-        """)
-    else:
-        column_values = 'BlockedHours'
-        color_coding_js = JsCode("""
-        function(params) {
-            var hours = params.value;
-            if (hours === 0) {
-                return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for BlockedHours = 0
-            } else if (hours > 0 && hours < 8) {
-                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for BlockedHours > 0 and < 8
-            } else if (hours >= 8) {
-                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for BlockedHours >= 8
-            }
-            return null;
-        }
-        """)
+# Filter the columns based on the selected view type
+if view_type == 'Available Hours':
+    column_values = 'AvailableHours'
+else:
+    column_values = 'BlockedHours'
 
-    # Prepare the data for "Month to Go" or "Total of Month" by calculating cumulative sums for each day in the month
-    if date_range_type == 'Month to Go':
-        # Calculate the sum from each day to the end of the month
-        pivot_data = []
-        for day in all_days_in_month:
-            day_data = hcp_data[hcp_data['ShiftDate'] >= day]
-            day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
-            day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Month to Go']
-            pivot_data.append(day_sum)
+# Define color coding for 'Total of Month' or 'Month to Go'
+color_coding_js = JsCode("""
+function(params) {
+    var value = params.value;
+    if (value === 0) {
+        return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for 0
+    } else if (value > 0 && value < 8) {
+        return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for > 0 and < 8
+    } else if (value >= 8) {
+        return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for >= 8
+    }
+    return null;
+}
+""")
 
-    else:
-        # Calculate the sum from the start of the month to each day
-        pivot_data = []
-        for day in all_days_in_month:
-            day_data = hcp_data[hcp_data['ShiftDate'] <= day]
-            day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
-            day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Total of Month']
-            pivot_data.append(day_sum)
+# Prepare the data for "Month to Go" or "Total of Month" by calculating cumulative sums for each day in the month
+pivot_data = []
 
-    # Merge the daily data into one DataFrame to display
-    merged_data = pivot_data[0]
-    for df in pivot_data[1:]:
-        merged_data = pd.merge(merged_data, df, on=['Shop Name', 'Resource Name'], how='outer')
-
-    # Ensure no spaces in field names in the merged DataFrame
-    merged_data.columns = [col.replace(' ', '_') for col in merged_data.columns]
-
-    # Dynamic column definitions with conditional formatting
-    columnDefs = [
-        {
-            "headerName": "Shop Name",
-            "field": "Shop_Name",
-            "resizable": True,
-            "flex": 2,  # Adjust flex value to make this column wider
-            "minWidth": 150,  # Set a minimum width for columns
-            "filter": 'agTextColumnFilter',  # Set filter type to text for shop name
-        },
-        {
-            "headerName": "Resource Name",
-            "field": "Resource_Name",
-            "resizable": True,
-            "flex": 2,
-            "minWidth": 150,
-            "filter": 'agTextColumnFilter',  # Set filter type to text for resource name
-        }
-    ]
-
-    # Append dynamic column definitions for each day in the month
+if date_range_type == 'Month to Go':
+    # Calculate the sum from each day to the end of the month (capped at today)
     for day in all_days_in_month:
-        columnDefs.append({
-            "headerName": f"{day.date()}",
-            "field": f"{day.date()}_{date_range_type.replace(' ', '_')}",
-            "valueFormatter": "x.toFixed(1)",  # Format numeric values to 1 decimal place
-            "resizable": True,
-            "flex": 1,
-            "cellStyle": color_coding_js  # Apply color coding based on hours
-        })
+        day_data = hcp_data[hcp_data['ShiftDate'] >= day]
+        day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
+        day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Month to Go']
+        pivot_data.append(day_sum)
+else:
+    # Calculate the sum from the start of the month to each day (capped at today)
+    for day in all_days_in_month:
+        day_data = hcp_data[hcp_data['ShiftDate'] <= day]
+        day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
+        day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Total of Month']
+        pivot_data.append(day_sum)
 
-    # Calculate totals for numeric columns
-    total_row = {'Shop_Name': 'Total', 'Resource_Name': ''}
-    for col in merged_data.columns[2:]:
-        total_row[col] = merged_data[col].sum()
+# Merge the daily data into one DataFrame to display, filling blanks with zeros
+merged_data = pivot_data[0]
+for df in pivot_data[1:]:
+    merged_data = pd.merge(merged_data, df, on=['Shop Name', 'Resource Name'], how='outer')
 
-    # Append the total row to the data
-    total_df = pd.DataFrame(total_row, index=[0])
-    df_with_totals = pd.concat([merged_data, total_df], ignore_index=True)
+# Fill in blanks with zeros
+merged_data.fillna(0, inplace=True)
 
-    # Configure GridOptionsBuilder with the updated data and column definitions
-    gb_tab3 = GridOptionsBuilder.from_dataframe(df_with_totals)
+# Ensure no spaces in field names in the merged DataFrame
+merged_data.columns = [col.replace(' ', '_') for col in merged_data.columns]
 
-    # Add individual column configurations
-    for col_def in columnDefs:
-        gb_tab3.configure_column(**col_def)
+# Dynamic column definitions with conditional formatting
+columnDefs = [
+    {
+        "headerName": "Shop Name",
+        "field": "Shop_Name",
+        "resizable": True,
+        "flex": 2,  # Adjust flex value to make this column wider
+        "minWidth": 150,  # Set a minimum width for columns
+        "filter": 'agTextColumnFilter',  # Set filter type to text for shop name
+    },
+    {
+        "headerName": "Resource Name",
+        "field": "Resource_Name",
+        "resizable": True,
+        "flex": 2,
+        "minWidth": 150,
+        "filter": 'agTextColumnFilter',  # Set filter type to text for resource name
+    }
+]
 
-    # Allow columns to fill the width and use autoHeight for rows
-    gb_tab3.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+# Append dynamic column definitions for each day in the month (excluding Sundays and capped at today)
+for day in all_days_in_month:
+    columnDefs.append({
+        "headerName": f"{day.date()}",
+        "field": f"{day.date()}_{date_range_type.replace(' ', '_')}",
+        "valueFormatter": "x.toFixed(1)",  # Format numeric values to 1 decimal place
+        "resizable": True,
+        "flex": 1,
+        "cellStyle": color_coding_js  # Apply color coding based on 'Month to Go' or 'Total of Month' values
+    })
 
-    # Build grid options
-    grid_options_tab3 = gb_tab3.build()
+# Calculate totals for numeric columns
+total_row = {'Shop_Name': 'Total', 'Resource_Name': ''}
+for col in merged_data.columns[2:]:
+    total_row[col] = merged_data[col].sum()
 
-    # Render the AG-Grid in Streamlit with full width and custom styling
-    try:
-        AgGrid(
-            df_with_totals,
-            gridOptions=grid_options_tab3,
-            enable_enterprise_modules=True,
-            allow_unsafe_jscode=True,  # Allow JavaScript code execution
-            fit_columns_on_grid_load=True,  # Automatically fit columns on load
-            height=1000,  # Set grid height to 1000 pixels
-            width='100%',  # Set grid width to 100% of the available space
-            theme='streamlit'
-        )
-    except Exception as ex:
-        st.error(f"An error occurred: {ex}")
+# Append the total row to the data
+total_df = pd.DataFrame(total_row, index=[0])
+df_with_totals = pd.concat([merged_data, total_df], ignore_index=True)
+
+# Configure GridOptionsBuilder with the updated data and column definitions
+gb_tab3 = GridOptionsBuilder.from_dataframe(df_with_totals)
+
+# Add individual column configurations
+for col_def in columnDefs:
+    gb_tab3.configure_column(**col_def)
+
+# Allow columns to fill the width and use autoHeight for rows
+gb_tab3.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+
+# Build grid options
+grid_options_tab3 = gb_tab3.build()
+
+# Render the AG-Grid in Streamlit with full width and custom styling
+try:
+    AgGrid(
+        df_with_totals,
+        gridOptions=grid_options_tab3,
+        enable_enterprise_modules=True,
+        allow_unsafe_jscode=True,  # Allow JavaScript code execution
+        fit_columns_on_grid_load=True,  # Automatically fit columns on load
+        height=1000,  # Set grid height to 1000 pixels
+        width='100%',  # Set grid width to 100% of the available space
+        theme='streamlit'
+    )
+except Exception as ex:
+    st.error(f"An error occurred: {ex}")
