@@ -113,6 +113,11 @@ file_mod_time = os.path.getmtime('shiftslots.xlsx')
 
 shift_slots = load_excel('shiftslots.xlsx', file_mod_time=file_mod_time)
 
+file_mod_time1 = os.path.getmtime('hcpshiftslots.xlsx')
+
+hcp_shift_slots = load_excel('hcpshiftslots.xlsx', file_mod_time=file_mod_time1)
+
+
 # Sidebar filters (all converted to single-selection using selectbox)
 iso_week_filter = st.sidebar.selectbox('Select ISO Week', sorted(shift_slots['iso_week'].unique()))
 
@@ -244,7 +249,14 @@ aggregated_data = filtered_data.groupby(['GT_ShopCode__c', 'Shop[Name]', 'date',
 aggregated_data['date'] = pd.to_datetime(aggregated_data['date']).dt.date
 check= aggregated_data[(aggregated_data['GT_ShopCode__c'] == '240')]
 
-tab1, tab2 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage"])
+
+# Aggregating data by GT_ShopCode__c, Shop[Name], date, and weekday
+hcp_data = hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceResource__r.Name', 'GT_ShopCode__c', 'Shop[Name]', 'ShiftDate', 'weekday']).agg(
+    AvailableHours=('ShiftDurationHoursAdjusted', 'sum'),
+    BlockedHours=('AbsenceDurationHours', 'sum'),
+).reset_index()
+
+tab1, tab2, tab3 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage", "HCM View"])
 
 with tab1:        
     # Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
@@ -402,6 +414,7 @@ with tab1:
         )
     except Exception as ex:
         st.error(f"An error occurred: {ex}")
+
 with tab2:
     # Adjust the pivot table to use BlockedHoursPercentage
     pivot_table_tab2 = aggregated_data.pivot_table(
@@ -530,6 +543,143 @@ with tab2:
             width='100%',  # Set grid width to 100% of the available space
             theme='streamlit',
             custom_css=custom_css   
+        )
+    except Exception as ex:
+        st.error(f"An error occurred: {ex}")
+
+with tab3:
+    # Add a button to toggle between "Available Hours" and "Blocked Hours"
+    view_type = st.radio("Select view:", ['Available Hours', 'Blocked Hours'])
+
+    # Filter the columns based on the selected view type
+    if view_type == 'Available Hours':
+        column_values = 'AvailableHours'
+        color_coding_js = JsCode("""
+        function(params) {
+            var hours = params.value;
+            if (hours === 0) {
+                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for AvailableHours = 0
+            } else if (hours > 0 && hours < 8) {
+                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for AvailableHours > 0 and < 8
+            } else if (hours >= 8) {
+                return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for AvailableHours >= 8
+            }
+            return null;
+        }
+        """)
+    else:
+        column_values = 'BlockedHours'
+        color_coding_js = JsCode("""
+        function(params) {
+            var hours = params.value;
+            if (hours === 0) {
+                return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for BlockedHours = 0
+            } else if (hours > 0 && hours < 8) {
+                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for BlockedHours > 0 and < 8
+            } else if (hours >= 8) {
+                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for BlockedHours >= 8
+            }
+            return null;
+        }
+        """)
+
+    # Adjust the pivot table to use either AvailableHours or BlockedHours
+    pivot_table_tab3 = hcp_data.pivot_table(
+        index=['Shop[Name]', 'GT_ServiceResource__r.Name'],
+        columns=['ShiftDate', 'weekday'],
+        values=column_values,
+        fill_value=0
+    )
+
+    # Flatten the columns
+    pivot_table_tab3.columns = [f"{col[0]}_{col[1]}" for col in pivot_table_tab3.columns.to_flat_index()]
+    pivot_table_tab3_reset = pivot_table_tab3.reset_index()
+
+    # Rename columns
+    pivot_table_tab3_reset.rename(columns={
+        'Shop[Name]': 'Shop Name',
+        'GT_ServiceResource__r.Name': 'Resource Name'
+    }, inplace=True)
+
+    # Calculate "Total of Month" and "Month to Go"
+    pivot_table_tab3_reset['Total of Month'] = pivot_table_tab3_reset.loc[:, pivot_table_tab3_reset.columns.str.contains(f'^{column_values}')].sum(axis=1)
+    
+    today = pd.Timestamp(datetime.now().date())
+    remaining_data = hcp_data[hcp_data['ShiftDate'] >= today]
+    remaining_hours = remaining_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
+    remaining_hours.columns = ['Shop Name', 'Resource Name', 'Month to Go']
+    
+    # Merge the remaining hours data into the main table
+    df_tab3 = pd.merge(pivot_table_tab3_reset, remaining_hours, on=['Shop Name', 'Resource Name'], how='left')
+
+    # Ensure no spaces in field names in df_tab3
+    df_tab3.columns = [col.replace(' ', '_') for col in df_tab3.columns]
+
+    # Dynamic column definitions with conditional formatting
+    columnDefs = [
+        {
+            "headerName": "Shop Name",
+            "field": "Shop_Name",
+            "resizable": True,
+            "flex": 2,  # Adjust flex value to make this column wider
+            "minWidth": 150,  # Set a minimum width for columns
+            "filter": 'agTextColumnFilter',  # Set filter type to text for shop name
+        },
+        {
+            "headerName": "Resource Name",
+            "field": "Resource_Name",
+            "resizable": True,
+            "flex": 2,
+            "minWidth": 150,
+            "filter": 'agTextColumnFilter',  # Set filter type to text for resource name
+        }
+    ]
+
+    # Append dynamic column definitions for Available/Blocked Hours and apply conditional formatting
+    for column in df_tab3.columns[2:]:
+        if column.startswith(column_values):
+            columnDefs.append({
+                "field": column,
+                "headerName": column.split('_')[1] + ' (' + column.split('_')[2] + ')',
+                "valueFormatter": "x.toFixed(1)",  # Format numeric values to 1 decimal place
+                "resizable": True,
+                "flex": 1,
+                "cellStyle": color_coding_js  # Apply color coding based on hours
+            })
+    
+    # Calculate totals for numeric columns
+    total_row = {'Shop_Name': 'Total', 'Resource_Name': ''}
+    for col in df_tab3.columns[2:]:
+        total_row[col] = df_tab3[col].sum()
+
+    # Append the total row to the data
+    total_df = pd.DataFrame(total_row, index=[0])
+    df_with_totals = pd.concat([df_tab3, total_df], ignore_index=True)
+
+    # Configure GridOptionsBuilder with the updated data and column definitions
+    gb_tab3 = GridOptionsBuilder.from_dataframe(df_with_totals)
+
+    # Add individual column configurations
+    for col_def in columnDefs:
+        gb_tab3.configure_column(**col_def)
+
+    # Allow columns to fill the width and use autoHeight for rows
+    gb_tab3.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+
+    # Build grid options
+    grid_options_tab3 = gb_tab3.build()
+
+    # Render the AG-Grid in Streamlit with full width and custom styling
+    try:
+        AgGrid(
+            df_with_totals,
+            gridOptions=grid_options_tab3,
+            enable_enterprise_modules=True,
+            allow_unsafe_jscode=True,  # Allow JavaScript code execution
+            fit_columns_on_grid_load=True,  # Automatically fit columns on load
+            height=1000,  # Set grid height to 1000 pixels
+            width='100%',  # Set grid width to 100% of the available space
+            theme='streamlit'
         )
     except Exception as ex:
         st.error(f"An error occurred: {ex}")

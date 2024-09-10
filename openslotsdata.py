@@ -471,9 +471,9 @@ shift_slots['TotalSlots_gross'] = shift_slots['TotalSlots_gross'].fillna(0)
 shift_slots['TotalHours'] = shift_slots['TotalHours'].fillna(0)
 
 # Test shop 'C07' to check final output
-a = shift_slots[shift_slots['GT_ShopCode__c'] == '182']
+a = shift_slots[shift_slots['GT_ShopCode__c'] == 'C07']
 
-print(a[['ShiftDurationHours', 'date',  'Region', 'Area', 'Shop[Name]', 'BlockedHoursPercentage', 'TotalHours', 'BlockedHours','TotalBookedSlots']])
+print(a[['ShiftDurationHours', 'date',  'Region', 'Area', 'Shop[Name]', 'BlockedHoursPercentage', 'TotalHours', 'BlockedHours','TotalBookedSlots', 'OpenHours', 'BookedHours']])
 
 # Step 5: Recalculate `TotalBookedSlots` based on the total booked slots by date
 shift_slots = pd.merge(
@@ -488,7 +488,7 @@ shift_slots.head()
 # Fill missing values for TotalBookedSlots and perform necessary calculations
 shift_slots['TotalBookedSlots'] = shift_slots['Count'].fillna(0)
 shift_slots.drop(columns=['Count'], inplace=True)
-shift_slots
+
 shift_slots['OpenSlots'] = shift_slots['TotalSlots'] - shift_slots['TotalBookedSlots']
 shift_slots['OpenSlots'] = shift_slots['OpenSlots'].apply(lambda x: max(x, 0))
 
@@ -497,10 +497,6 @@ shift_slots['OpenHours'] = (shift_slots['OpenSlots'] * 5) / 60
 shift_slots['BookedHours'] = (shift_slots['TotalBookedSlots'] * 5) / 60
 shift_slots['SaturationPercentage'] = (shift_slots['BookedHours'] / shift_slots['TotalHours']) * 100
 shift_slots['SaturationPercentage'] = shift_slots['SaturationPercentage'].clip(lower=0, upper=100)
-
-shift_slots['OpenHours'] = shift_slots['OpenSlots'].fillna(0)
-shift_slots['BookedHours'] = shift_slots['TotalBookedSlots'].fillna(0)
-shift_slots['SaturationPercentage'] = shift_slots['SaturationPercentage'].fillna(0)
 
 # Add weekday name and ISO week
 shift_slots['date'] = pd.to_datetime(shift_slots['date'], format='%d/%m/%Y')
@@ -518,7 +514,6 @@ shift_slots = shift_slots.sort_values(by='date')
 # Save to Excel
 output_file_path = 'shiftslots.xlsx'
 shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')
-
 
 #TAB3
 
