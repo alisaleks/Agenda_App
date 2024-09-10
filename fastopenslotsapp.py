@@ -558,11 +558,8 @@ with tab3:
     start_of_month = today.replace(day=1)
     end_of_month = today + pd.offsets.MonthEnd(0)
 
-    # If "Month to Go" is selected, allow the user to choose the starting date for the calculation
-    if date_range_type == 'Month to Go':
-        selected_date = st.date_input("Select a date for Month to Go calculation", value=today)
-    else:
-        selected_date = start_of_month  # For "Total of Month", start from the beginning of the month
+    # Get all the days of the current month
+    all_days_in_month = pd.date_range(start=start_of_month, end=end_of_month)
 
     # Filter the columns based on the selected view type
     if view_type == 'Available Hours':
@@ -596,26 +593,32 @@ with tab3:
         }
         """)
 
-    # Adjust the pivot table based on selected date range
+    # Prepare the data for "Month to Go" or "Total of Month" by calculating cumulative sums for each day in the month
     if date_range_type == 'Month to Go':
-        # Filter the data from the selected date to the end of the month
-        filtered_data = hcp_data[hcp_data['ShiftDate'] >= selected_date]
+        # Calculate the sum from each day to the end of the month
+        pivot_data = []
+        for day in all_days_in_month:
+            day_data = hcp_data[hcp_data['ShiftDate'] >= day]
+            day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
+            day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Month to Go']
+            pivot_data.append(day_sum)
+
     else:
-        # Filter the data from the start of the month to today
-        filtered_data = hcp_data[(hcp_data['ShiftDate'] >= start_of_month) & (hcp_data['ShiftDate'] <= today)]
+        # Calculate the sum from the start of the month to each day
+        pivot_data = []
+        for day in all_days_in_month:
+            day_data = hcp_data[hcp_data['ShiftDate'] <= day]
+            day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
+            day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Total of Month']
+            pivot_data.append(day_sum)
 
-    # Group by Shop Name and Resource Name, then calculate the sum of Available/Blocked Hours
-    grouped_data = filtered_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
+    # Merge the daily data into one DataFrame to display
+    merged_data = pivot_data[0]
+    for df in pivot_data[1:]:
+        merged_data = pd.merge(merged_data, df, on=['Shop Name', 'Resource Name'], how='outer')
 
-    # Rename columns
-    grouped_data.rename(columns={
-        'Shop[Name]': 'Shop Name',
-        'GT_ServiceResource__r.Name': 'Resource Name',
-        column_values: 'Total Hours'
-    }, inplace=True)
-
-    # Ensure no spaces in field names in df
-    grouped_data.columns = [col.replace(' ', '_') for col in grouped_data.columns]
+    # Ensure no spaces in field names in the merged DataFrame
+    merged_data.columns = [col.replace(' ', '_') for col in merged_data.columns]
 
     # Dynamic column definitions with conditional formatting
     columnDefs = [
@@ -634,24 +637,28 @@ with tab3:
             "flex": 2,
             "minWidth": 150,
             "filter": 'agTextColumnFilter',  # Set filter type to text for resource name
-        },
-        {
-            "headerName": "Total Hours",
-            "field": "Total_Hours",
+        }
+    ]
+
+    # Append dynamic column definitions for each day in the month
+    for day in all_days_in_month:
+        columnDefs.append({
+            "headerName": f"{day.date()}",
+            "field": f"{day.date()}_{date_range_type.replace(' ', '_')}",
             "valueFormatter": "x.toFixed(1)",  # Format numeric values to 1 decimal place
             "resizable": True,
             "flex": 1,
             "cellStyle": color_coding_js  # Apply color coding based on hours
-        }
-    ]
+        })
 
     # Calculate totals for numeric columns
     total_row = {'Shop_Name': 'Total', 'Resource_Name': ''}
-    total_row['Total_Hours'] = grouped_data['Total_Hours'].sum()
+    for col in merged_data.columns[2:]:
+        total_row[col] = merged_data[col].sum()
 
     # Append the total row to the data
     total_df = pd.DataFrame(total_row, index=[0])
-    df_with_totals = pd.concat([grouped_data, total_df], ignore_index=True)
+    df_with_totals = pd.concat([merged_data, total_df], ignore_index=True)
 
     # Configure GridOptionsBuilder with the updated data and column definitions
     gb_tab3 = GridOptionsBuilder.from_dataframe(df_with_totals)
