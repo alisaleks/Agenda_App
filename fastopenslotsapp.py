@@ -117,6 +117,10 @@ file_mod_time1 = os.path.getmtime('hcpshiftslots.xlsx')
 
 hcp_shift_slots = load_excel('hcpshiftslots.xlsx', file_mod_time=file_mod_time1)
 
+file_mod_time2 = os.path.getmtime('hcm_sf_merged.xlsx')
+
+hcm = load_excel('hcm_sf_merged.xlsx', file_mod_time=file_mod_time2)
+
 
 # Sidebar filters (all converted to single-selection using selectbox)
 iso_week_filter = st.sidebar.selectbox('Select ISO Week', sorted(shift_slots['iso_week'].unique()))
@@ -765,138 +769,126 @@ with tab3:
         theme='streamlit',
         custom_css=custom_css  # Apply custom CSS
     )
-
-
-
-
 with tab4:
-    # Adjust the pivot table to use BlockedHoursPercentage
-    pivot_table_tab2 = aggregated_data.pivot_table(
-        index=['Shop[Name]'],
-        columns=['date', 'weekday'],
-        values='BlockedHoursPercentage',
-        aggfunc='mean',
+    # Pivot the table for Tab 4
+    pivot_table_tab4 = hcm.pivot_table(
+        index='Shop Name',
+        columns='ISO_Week',
+        values=['Duración SF', 'Duración HCM', 'Diferencia de duración'],
+        aggfunc='sum',
         fill_value=0
     )
 
     # Flatten the columns for display
-    pivot_table_tab2.columns = [f"{col[0]}_{col[1]}" for col in pivot_table_tab2.columns.to_flat_index()]
-    pivot_table_tab2_reset = pivot_table_tab2.reset_index()
+    pivot_table_tab4.columns = [f"Week {col[1]} {col[0]}" for col in pivot_table_tab4.columns.to_flat_index()]
+    pivot_table_tab4_reset = pivot_table_tab4.reset_index()
 
     # Create the DataFrame for AgGrid
-    df_tab2 = pivot_table_tab2_reset
+    df_tab4 = pivot_table_tab4_reset
 
     # Ensure no spaces in field names in df, replacing spaces with underscores or removing them
-    df_tab2.columns = [col.replace(' ', '_') for col in df_tab2.columns]
+    df_tab4.columns = [col.replace(' ', '_') for col in df_tab4.columns]
 
-    # JavaScript code for custom cell styling
+    # JavaScript code for custom cell styling (same as Tab 1)
     js_code = JsCode("""
     function(params) {
-        var blockedHoursValue = params.value;
+        var value = params.value;
 
-        if (blockedHoursValue === 0) {
-            return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for BlockedHoursPercentage = 0
-        } else if (blockedHoursValue > 0 && blockedHoursValue <= 50) {
-            return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for BlockedHoursPercentage between 0 and 50
-        } else if (blockedHoursValue > 50) {
-            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for BlockedHoursPercentage > 50
-        } else {
-            return null;  // Default style
+        if (params.colDef.field.includes('Delta')) {
+            if (value === 0) {
+                return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for Delta = 0
+            } else if (value > 0) {
+                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for Delta > 0
+            } else if (value < 0) {
+                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for Delta < 0
+            }
         }
+        return null;  // Default style for other columns
     }
     """)
 
     custom_css = {
         ".ag-header-cell": {
-            "background-color": "#cc0641 !important",  # Ensure entire cell background changes
-            "color": "white !important",
-            "font-weight": "bold",
-            "padding": "4px"  # Reduce padding to make headers more compact
-        },
-        ".ag-header-group-cell": {  # Style for merged/group headers
             "background-color": "#cc0641 !important",
             "color": "white !important",
             "font-weight": "bold",
+            "padding": "4px"
         },
         ".ag-cell": {
-            "padding": "2px",  # Reduce padding inside cells to make them more compact
-            "font-size": "12px"  # Reduce font size for a more compact look
-        },
-        ".ag-header": {
-            "height": "35px",  # Reduce header height
+            "padding": "2px",
+            "font-size": "12px"
         },
         ".ag-theme-streamlit .ag-row": {
-            "max-height": "30px"  # Adjust max height for rows to be more compact
-        },
-        ".ag-theme-streamlit .ag-menu-option-text, .ag-theme-streamlit .ag-filter-body-wrapper, .ag-theme-streamlit .ag-input-wrapper, .ag-theme-streamlit .ag-icon": {
-            "font-size": "6px !important"  # Reduce font size for filter options and ensure it's applied
-        },
-        ".ag-theme-streamlit .ag-root-wrapper": {
-            "border": "2px solid #cc0641",  # Add outer border with specified color
-            "border-radius": "5px"  # Optional: Rounded corners for the outer border
+            "max-height": "30px"
         }
     }
 
-    # Example column definition with flex and resizable properties
-    columnDefs_tab2 = [
+    # Configure GridOptionsBuilder with JavaScript code and custom styling
+    gb_tab4 = GridOptionsBuilder.from_dataframe(df_tab4)
+
+    # Define the column configuration for "Shop Name"
+    columnDefs = [
         {
             "headerName": "Shop Name",
-            "field": "Shop[Name]", 
+            "field": "Shop_Name",
             "resizable": True,
-            "flex": 2,  # Adjust flex value to make this column wider
-            "minWidth": 150,  # Set a minimum width for columns
-            "filter": 'agTextColumnFilter',  # Set filter type to text for shop name
-        },
+            "flex": 2,
+            "minWidth": 150
+        }
     ]
 
-    # Append dynamic column definitions for BlockedHoursPercentage
-    for column in df_tab2.columns[1:]:  # Start from 1 to skip Shop[Name]
-        headerName = column.split('_')[0] + ' (' + column.split('_')[1] + ')'
-        columnDefs_tab2.append({
-            "field": column,
-            "headerName": headerName,
-            "valueFormatter": "(x > 100 ? 100 : x.toFixed(1)) + ' %'",  # Cap at 100 and add %
-            "resizable": True,
-            "flex": 1,
-            "cellStyle": js_code
+    # Append dynamic column definitions for each week's SF, HCM, Delta
+    for week in range(35, 41):  # Example for weeks 35 to 40
+        columnDefs.append({
+            "headerName": f"Week {week}",
+            "children": [
+                {
+                    "field": f"Week_{week}_Duración_SF",
+                    "headerName": "SF",
+                    "valueFormatter": "x.toFixed(1)",
+                    "resizable": True,
+                    "flex": 1
+                },
+                {
+                    "field": f"Week_{week}_Duración_HCM",
+                    "headerName": "HCM",
+                    "valueFormatter": "x.toFixed(1)",
+                    "resizable": True,
+                    "flex": 1
+                },
+                {
+                    "field": f"Week_{week}_Diferencia_de_duración",
+                    "headerName": "Delta",
+                    "valueFormatter": "x.toFixed(1)",
+                    "resizable": True,
+                    "flex": 1,
+                    "cellStyle": js_code
+                }
+            ]
         })
 
-    # Calculate totals for BlockedHoursPercentage
-    total_row_tab2 = {'Shop[Name]': 'Total'}
-    for col in df_tab2.columns[1:]:
-        total_row_tab2[col] = df_tab2[col].mean()
+    # Configure column settings for conditional formatting based on the column name
+    for column in df_tab4.columns[1:]:
+        gb_tab4.configure_column(field=column, cellStyle=js_code)
 
-    # Convert total_row to DataFrame and append to the original data
-    total_df_tab2 = pd.DataFrame(total_row_tab2, index=[0])
-    df_with_totals_tab2 = pd.concat([df_tab2, total_df_tab2], ignore_index=True)
-
-    # Configure GridOptionsBuilder with JavaScript code
-    gb_tab2 = GridOptionsBuilder.from_dataframe(df_with_totals_tab2)
-
-    for column in df_tab2.columns[1:]:
-        gb_tab2.configure_column(column, cellStyle=js_code)
-
-    # Allow columns to fill the width and use autoHeight for rows
-    gb_tab2.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+    # Configure grid options
+    gb_tab4.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
 
     # Build grid options
-    grid_options_tab2 = gb_tab2.build()
+    grid_options_tab4 = gb_tab4.build()
 
     # Set the columnDefs in the grid_options dictionary
-    grid_options_tab2['columnDefs'] = columnDefs_tab2
+    grid_options_tab4['columnDefs'] = columnDefs
 
-    # Render the AG-Grid in Streamlit
-    try:
-        AgGrid(
-            df_with_totals_tab2,
-            gridOptions=grid_options_tab2,
-            enable_enterprise_modules=True,
-            allow_unsafe_jscode=True,  # Allow JavaScript code execution
-            fit_columns_on_grid_load=True,  # Automatically fit columns on load
-            height=1000,  # Set grid height to 1000 pixels
-            width='100%',  # Set grid width to 100% of the available space
-            theme='streamlit',
-            custom_css=custom_css   
-        )
-    except Exception as ex:
-        st.error(f"An error occurred: {ex}")
+    # Render the AG-Grid in Streamlit with full width and custom styling
+    AgGrid(
+        df_tab4,
+        gridOptions=grid_options_tab4,
+        enable_enterprise_modules=True,
+        allow_unsafe_jscode=True,  # Allow JavaScript code execution
+        fit_columns_on_grid_load=True,
+        height=1000,
+        width='100%',
+        theme='streamlit',
+        custom_css=custom_css  # Apply custom CSS
+    )
