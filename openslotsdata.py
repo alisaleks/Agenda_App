@@ -143,7 +143,9 @@ absences.rename(columns={
 region_mapping_path = 'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/regionmapping.xlsx'
 region_mapping = load_excel(region_mapping_path)
 region_mapping.columns
-region_mapping['SYN'].head()
+# Filter the original region_mapping DataFrame
+region_mapping = region_mapping[region_mapping['SYM'] != 'N']
+
 sfshifts['StartTime'] = pd.to_datetime(sfshifts['Shift[StartTime]'], errors='coerce')
 sfshifts['EndTime'] = pd.to_datetime(sfshifts['Shift[EndTime]'], errors='coerce')
 start_date = datetime(2024, 9, 1)
@@ -196,9 +198,10 @@ shifts_filtered['ShopResourceKey'] = shifts_filtered['GT_ShopCode__c'] + shifts_
 resources['ShopResourceKey'] = resources['GT_ShopCode__c'] + resources['Service Territory Member[ServiceResourceId]']
 # Filter out resources where 'Service Resource[IsActive]' is 'False'
 resources = resources[resources['Service Resource[IsActive]'] != 'False']
+resources.columns
 # Continue with merging active resource information into the shifts data
 shifts_filtered = shifts_filtered.merge(
-    resources[['ShopResourceKey', 'IsActive']], 
+    resources[['ShopResourceKey', 'Service Resource[IsActive]']], 
     on='ShopResourceKey', 
     how='left'
 )
@@ -440,27 +443,28 @@ date_range = pd.date_range(start=start_date, end=end_date, freq='B')  # weekdays
 
 # Step 2: Create a DataFrame for all combinations of shop codes and the date range
 shops_dates = pd.MultiIndex.from_product(
-    [region_mapping['CODE'].unique(), date_range],
+    [region_mapping['SHOP CODE'].unique(), date_range],
     names=['GT_ShopCode__c', 'date']
 ).to_frame(index=False)
 
 # Step 3: Include Region, Area, and Shop[Name] information in the shops_dates DataFrame
 shops_dates = pd.merge(
     shops_dates,
-    region_mapping[['CODE', 'REGION', 'AREA', 'DESCR']],  # Include Region, Area, and Shop[Name]
+    region_mapping[['SHOP CODE', 'AREAS', 'AREA CODE', 'SHOP CODE-DESCR']],  # Include Region, Area, and Shop[Name]
     left_on='GT_ShopCode__c',
-    right_on='CODE',
+    right_on='SHOP CODE',
     how='left'
 )
+
 # Rename columns to match the expected output
 shops_dates.rename(columns={
-    'REGION': 'Region',
-    'AREA': 'Area',
-    'DESCR': 'Shop[Name]'
+    'AREAS': 'AREAS',
+    'AREA CODE': 'AREA CODE',
+    'SHOP CODE-DESCR': 'Shop[Name]'
 }, inplace=True)
 
 # Step 4: Drop unnecessary columns
-shops_dates.drop(columns=['CODE'], inplace=True)
+shops_dates.drop(columns=['SHOP CODE'], inplace=True)
 
 shift_slots = pd.merge(
     shops_dates,
@@ -484,7 +488,7 @@ shift_slots['TotalHours'] = shift_slots['TotalHours'].fillna(0)
 # Test shop 'C07' to check final output
 a = shift_slots[shift_slots['GT_ShopCode__c'] == 'C07']
 
-print(a[['ShiftDurationHours', 'date',  'Region', 'Area', 'Shop[Name]', 'BlockedHoursPercentage', 'TotalHours', 'BlockedHours','TotalBookedSlots', 'OpenHours', 'BookedHours']])
+print(a[['ShiftDurationHours', 'date',  'AREAS', 'AREA CODE', 'Shop[Name]', 'BlockedHoursPercentage', 'TotalHours', 'BlockedHours','TotalBookedSlots', 'OpenHours', 'BookedHours']])
 
 # Step 5: Recalculate `TotalBookedSlots` based on the total booked slots by date
 shift_slots = pd.merge(
@@ -532,24 +536,24 @@ sfshifts_merged.head()
 # Step 3: Include Region, Area, and Shop[Name] information in the shops_dates DataFrame
 sfshifts_merged = pd.merge(
     sfshifts_merged,
-    region_mapping[['CODE', 'REGION', 'AREA', 'DESCR']],  
+    region_mapping[['SHOP CODE', 'AREAS', 'AREA CODE', 'SHOP CODE-DESCR']],  
     left_on='GT_ShopCode__c',
-    right_on='CODE',
+    right_on='SHOP CODE',
     how='left'
 )
 
 missing_shop_codes = sfshifts_merged[sfshifts_merged['GT_ShopCode__c'].isna()]
-print(missing_shop_codes[['GT_ShopCode__c', 'Shop[Name]', 'REGION', 'AREA', 'CODE', 'ShiftDurationHoursAdjusted']])
+print(missing_shop_codes[['GT_ShopCode__c', 'Shop[Name]', 'AREAS', 'AREA CODE', 'SHOP CODE', 'ShiftDurationHoursAdjusted']])
 
 # Rename columns to match the expected output
 sfshifts_merged.rename(columns={
-    'REGION': 'Region',
-    'AREA': 'Area',
-    'DESCR': 'Shop[Name]'
+    'AREAS': 'AREAS',
+    'AREA CODE': 'AREA CODE',
+    'SHOP CODE-DESCR': 'Shop[Name]'
 }, inplace=True)
 
 # Step 4: Drop unnecessary columns
-sfshifts_merged.drop(columns=['CODE'], inplace=True)
+sfshifts_merged.drop(columns=['SHOP CODE'], inplace=True)
 sfshifts_merged.fillna(0, inplace=True)
 
 sfshifts_merged['weekday'] = sfshifts_merged['ShiftDate'].dt.day_name()
@@ -557,6 +561,8 @@ sfshifts_merged['weekday'] = sfshifts_merged['ShiftDate'].dt.day_name()
 # Save to Excel
 output_file_path2 = 'hcpshiftslots.xlsx'
 sfshifts_merged.to_excel(output_file_path2, index=False, engine='openpyxl')
+
+
 # Step 1: Read and prepare HCMdata
 hcm_file = 'HCMShifts.csv'
 hcm_columns_to_string = {
@@ -597,9 +603,9 @@ HCMdata = HCMdata[
 # Create composite keys
 HCMdata['ShopCode_3char'] = HCMdata['Shop[Shop Code - Descr]'].str[:3]
 HCMdata['CompositeKey'] = HCMdata['ShopCode_3char'] + '_' + HCMdata['Unique Employee[Employee Person Number]'].astype(str) + '_' + HCMdata['Calendar[ISO Year]'].astype(str) + '_' + HCMdata['Calendar[ISO Week]'].astype(str)
+sfshifts_merged['CompositeKey'] = sfshifts_merged['PersonalNumberKey'] + '_' + sfshifts_merged['iso_year'].astype(str) + '_' + sfshifts_merged['iso_week'].astype(str)
 
 # Step 2: Group and sum data
-# Group by and sum '[Audiologist_FTE]'
 HCMdata_summed = HCMdata.groupby(
     ['CompositeKey', 'Calendar[ISO Year]', 'Calendar[ISO Week]']
 ).agg({
@@ -608,7 +614,6 @@ HCMdata_summed = HCMdata.groupby(
 
 # Multiply the '[Audiologist_FTE]' by 40 to get the duration
 HCMdata_summed['Duración HCM'] = HCMdata_summed['[Audiologist_FTE]'] * 40
-
 # Step 3: Process SF shifts data
 shift_duration_per_week = sfshifts_merged.groupby(
     ['CompositeKey']
@@ -627,31 +632,32 @@ all_composite_keys = pd.merge(
 
 # Step 5: Add region, area, and shop (DESCR) mapping data based on the merged composite keys
 all_composite_keys['ShopCode_3char'] = all_composite_keys['CompositeKey'].str[:3]  # Extract the ShopCode_3char from CompositeKey
-
-# Merge with the region_mapping to add the 'REGION', 'AREA', and 'DESCR' (Shop Name)
+all_composite_keys.head()
+# Merge with the region_mapping to add the 'AREAS', 'AREA CODE', and 'SHOP CODE-DESCR' (Shop Name)
 all_composite_keys = pd.merge(
     all_composite_keys,
-    region_mapping[['CODE', 'REGION', 'AREA', 'DESCR']],  # Add the region and area mapping
+    region_mapping[['SHOP CODE', 'AREAS', 'AREA CODE', 'SHOP CODE-DESCR']],  # Add the region and area mapping
     left_on='ShopCode_3char',
-    right_on='CODE',
+    right_on='SHOP CODE',
     how='left'
 )
 
 # Step 6: Final Calculations and Fill Missing Values
 all_composite_keys['Diferencia de duración'] = all_composite_keys['Duración HCM'].fillna(0) - all_composite_keys['Duración SF'].fillna(0)
-all_composite_keys.fillna(0, inplace=True)
+missing_region_rows = all_composite_keys[all_composite_keys['AREAS'].isna()]
+print(missing_region_rows)
 
 # Step 7: Final output structure and rename columns
 all_composite_keys = all_composite_keys[[
-    'CompositeKey', 'Duración SF', 'Duración HCM', 'Diferencia de duración', 'REGION', 'AREA', 'DESCR'
+    'CompositeKey', 'Duración SF', 'Duración HCM', 'Diferencia de duración', 'AREAS', 'AREA CODE', 'SHOP CODE-DESCR'
 ]]
 
 # Rename for clarity
 all_composite_keys.rename(columns={
     'CompositeKey': 'Clave compuesta',
-    'REGION': 'Region',
-    'AREA': 'Area',
-    'DESCR': 'Shop Name'
+    'AREAS': 'AREAS',
+    'AREA CODE': 'AREA CODE',
+    'SHOP CODE-DESCR': 'Shop Name'
 }, inplace=True)
 all_composite_keys
 # Step 7: Save the result to Excel
