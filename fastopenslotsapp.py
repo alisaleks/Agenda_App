@@ -130,7 +130,7 @@ if previous_iso_week == 0:
     previous_iso_week = 52 if (pd.Timestamp(f"{previous_iso_year}-12-28").isocalendar()[1] == 52) else 53
 
 # Sidebar filter for Region
-region_list = sorted(shift_slots['AREAS'].dropna().unique().tolist())
+region_list = sorted(shift_slots['Region'].dropna().unique().tolist())
 region_options = ["All"] + region_list
 
 selected_region = st.sidebar.selectbox(
@@ -144,7 +144,7 @@ selected_region = st.sidebar.selectbox(
 if selected_region == "All":
     filtered_shift_slots_by_region = shift_slots
 else:
-    filtered_shift_slots_by_region = shift_slots[shift_slots['AREAS'] == selected_region]
+    filtered_shift_slots_by_region = shift_slots[shift_slots['Region'] == selected_region]
 
 # Sidebar filter for Area based on filtered data by Region
 area_list = sorted(filtered_shift_slots_by_region['Area'].dropna().unique().tolist())
