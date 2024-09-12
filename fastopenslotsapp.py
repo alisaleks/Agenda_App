@@ -121,7 +121,6 @@ file_mod_time2 = os.path.getmtime('hcm_sf_merged.xlsx')
 
 hcm = load_excel('hcm_sf_merged.xlsx', file_mod_time=file_mod_time2)
 
-
 # Sidebar filters (all converted to single-selection using selectbox)
 iso_week_filter = st.sidebar.selectbox('Select ISO Week', sorted(shift_slots['iso_week'].unique()))
 
@@ -178,53 +177,52 @@ selected_shop = st.sidebar.selectbox(
     help="Select a shop or 'All' to view data for all shops."
 )
 
-# Function for lazy loading of filtered data
+# Global Filter Function for other datasets (with iso_week filter)
 @st.cache_data
-def filter_shift_slots(data, iso_week_filter, selected_shop, selected_region, selected_area):
-    # Start with the full data
-    filtered_data = data.copy()
-
-    # Apply filters based on sidebar selections
-    filtered_data = filtered_data[filtered_data['iso_week'] == iso_week_filter]
+def filter_data(data, iso_week_filter, selected_region, selected_area, selected_shop, week_column='iso_week'):
+    filtered_data = data[data[week_column] == iso_week_filter]
 
     if selected_region != "All":
         filtered_data = filtered_data[filtered_data['Region'] == selected_region]
 
     if selected_area != "All":
         filtered_data = filtered_data[filtered_data['Area'] == selected_area]
-        
+
     if selected_shop != "All":
         filtered_data = filtered_data[filtered_data['Shop[Name]'] == selected_shop]
 
     return filtered_data
 
-
-# Function to filter hcp_shift_slots based on sidebar selections
+# Special filter function for HCM data (no iso_week filter)
 @st.cache_data
-def filter_hcp_shift_slots(data, iso_week_filter, selected_shop, selected_region, selected_area):
-    filtered_data = data.copy()
-    filtered_data = filtered_data[filtered_data['iso_week'] == iso_week_filter]
+def filter_hcm_data(data, selected_region, selected_area, selected_shop):
+    filtered_data = data.copy()  # Copy data without applying iso_week filter
 
     if selected_region != "All":
         filtered_data = filtered_data[filtered_data['Region'] == selected_region]
-    
+
     if selected_area != "All":
         filtered_data = filtered_data[filtered_data['Area'] == selected_area]
-    
+
     if selected_shop != "All":
-        filtered_data = filtered_data[filtered_data['Shop[Name]'] == selected_shop]
-    
+        filtered_data = filtered_data[filtered_data['Shop Name'] == selected_shop]
+
     return filtered_data
 
-# Filter both datasets using the sidebar selections
-filtered_data = filter_shift_slots(shift_slots, iso_week_filter, selected_shop, selected_region, selected_area)
-filtered_hcp_shift_slots = filter_hcp_shift_slots(hcp_shift_slots, iso_week_filter, selected_shop, selected_region, selected_area)
+# Apply the filters for the other datasets
+filtered_data = filter_data(shift_slots, iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
+filtered_hcp_shift_slots = filter_data(hcp_shift_slots, iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
+
+# Apply the filters to HCM data (without iso_week filter)
+filtered_hcm = filter_hcm_data(hcm, selected_region, selected_area, selected_shop)
 
 # Check if filtered data is empty after applying the filters
 if filtered_data.empty:
     st.warning("No shops found for the selected filter criteria.")
 # Check if filtered data is empty after applying the filters
 if filtered_hcp_shift_slots.empty:
+    st.warning("No shops found for the selected filter criteria.")
+if filtered_hcm.empty:
     st.warning("No shops found for the selected filter criteria.")
 
 # Filter data for the previous ISO week without applying the current filters (directly from shift_slots)
@@ -282,7 +280,7 @@ hcp_data = filtered_hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceRes
     BlockedHours=('AbsenceDurationHours', 'sum'),
 ).reset_index()
 
-tab1, tab2, tab3, tab4 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage", "MTD/MTG", "HCP View"])
+tab1, tab2, tab3, tab4 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage", "MTD/MTG", "HCM vs SF"])
 
 with tab1:        
     # Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
@@ -616,11 +614,9 @@ with tab3:
     # Define the starting and ending dates for the current month, capping it to today
     today = pd.Timestamp(datetime.now().date())
     start_of_month = today.replace(day=1)
-
     # Get all the days of the current month up to today, excluding Sundays
     all_days_in_month = pd.date_range(start=start_of_month, end=today)
     all_days_in_month = all_days_in_month[all_days_in_month.weekday != 6]  # Remove Sundays (6 represents Sunday)
-
     # Filter the columns based on the selected view type
     if view_type == 'Available Hours':
         column_values = 'AvailableHours'
@@ -771,11 +767,10 @@ with tab3:
     )
 with tab4:
     # Pivot the table for Tab 4
-    pivot_table_tab4 = hcm.pivot_table(
+    pivot_table_tab4 = filtered_hcm.pivot_table(
         index='Shop Name',
-        columns='ISO_Week',
+        columns='iso_week',
         values=['Duración SF', 'Duración HCM', 'Diferencia de duración'],
-        aggfunc='sum',
         fill_value=0
     )
 
@@ -789,27 +784,28 @@ with tab4:
     # Ensure no spaces in field names in df, replacing spaces with underscores or removing them
     df_tab4.columns = [col.replace(' ', '_') for col in df_tab4.columns]
 
-    # JavaScript code for custom cell styling (same as Tab 1)
+    # Updated JavaScript code to apply color based on Delta value
     js_code = JsCode("""
     function(params) {
-        var value = params.value;
+        var deltaField = params.colDef.field.replace('Duración_SF', 'Diferencia_de_duración')
+                                             .replace('Duración_HCM', 'Diferencia_de_duración');
 
-        if (params.colDef.field.includes('Delta')) {
-            if (value === 0) {
-                return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for Delta = 0
-            } else if (value > 0) {
-                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for Delta > 0
-            } else if (value < 0) {
-                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for Delta < 0
-            }
+        var deltaValue = params.data[deltaField];
+
+        if (deltaValue === 0) {
+            return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for Delta = 0
+        } else if (deltaValue > -3 && deltaValue < 3) {
+            return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for Delta between -3 and 3
+        } else {
+            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for Delta < -3 or > 3
         }
-        return null;  // Default style for other columns
     }
     """)
 
+    # Custom CSS for styling the grid, including Week X headers
     custom_css = {
         ".ag-header-cell": {
-            "background-color": "#cc0641 !important",
+            "background-color": "#cc0641 !important",  # Set Week X headers to red
             "color": "white !important",
             "font-weight": "bold",
             "padding": "4px"
@@ -820,11 +816,12 @@ with tab4:
         },
         ".ag-theme-streamlit .ag-row": {
             "max-height": "30px"
+        },
+        ".ag-theme-streamlit .ag-root-wrapper": {
+            "border": "2px solid #cc0641",
+            "border-radius": "5px"
         }
     }
-
-    # Configure GridOptionsBuilder with JavaScript code and custom styling
-    gb_tab4 = GridOptionsBuilder.from_dataframe(df_tab4)
 
     # Define the column configuration for "Shop Name"
     columnDefs = [
@@ -837,7 +834,7 @@ with tab4:
         }
     ]
 
-    # Append dynamic column definitions for each week's SF, HCM, Delta
+    # Append dynamic column definitions for each week's SF, HCM, Delta (apply color coding based on Delta value)
     for week in range(35, 41):  # Example for weeks 35 to 40
         columnDefs.append({
             "headerName": f"Week {week}",
@@ -847,14 +844,16 @@ with tab4:
                     "headerName": "SF",
                     "valueFormatter": "x.toFixed(1)",
                     "resizable": True,
-                    "flex": 1
+                    "flex": 1,
+                    "cellStyle": js_code  # Apply color coding based on Delta
                 },
                 {
                     "field": f"Week_{week}_Duración_HCM",
                     "headerName": "HCM",
                     "valueFormatter": "x.toFixed(1)",
                     "resizable": True,
-                    "flex": 1
+                    "flex": 1,
+                    "cellStyle": js_code  # Apply color coding based on Delta
                 },
                 {
                     "field": f"Week_{week}_Diferencia_de_duración",
@@ -862,16 +861,19 @@ with tab4:
                     "valueFormatter": "x.toFixed(1)",
                     "resizable": True,
                     "flex": 1,
-                    "cellStyle": js_code
+                    "cellStyle": js_code  # Apply color coding based on Delta
                 }
             ]
         })
 
-    # Configure column settings for conditional formatting based on the column name
+    # Configure GridOptionsBuilder with JavaScript code and custom styling
+    gb_tab4 = GridOptionsBuilder.from_dataframe(df_tab4)
+
+    # Add individual column configurations for conditional formatting
     for column in df_tab4.columns[1:]:
         gb_tab4.configure_column(field=column, cellStyle=js_code)
 
-    # Configure grid options
+    # Configure grid options (same as Tab 1)
     gb_tab4.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
 
     # Build grid options
@@ -885,7 +887,7 @@ with tab4:
         df_tab4,
         gridOptions=grid_options_tab4,
         enable_enterprise_modules=True,
-        allow_unsafe_jscode=True,  # Allow JavaScript code execution
+        allow_unsafe_jscode=True,
         fit_columns_on_grid_load=True,
         height=1000,
         width='100%',

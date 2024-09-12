@@ -195,37 +195,42 @@ shifts_filtered['ShiftDurationHours'] = (shifts_filtered['EndTime'] - shifts_fil
 shifts_filtered['ShopResourceKey'] = shifts_filtered['GT_ShopCode__c'] + shifts_filtered['Shift[ServiceResourceId]']
 resources['ShopResourceKey'] = resources['GT_ShopCode__c'] + resources['Service Territory Member[ServiceResourceId]']
 
+check = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '969_25367') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-09-02')]
+check
+# Step 1: Convert 'EffectiveStartDate' to datetime
+resources['EffectiveStartDate'] = pd.to_datetime(resources['Service Territory Member[EffectiveStartDate]'], errors='coerce')
 
-resources.columns
-shifts_filtered.columns
-# Filter out resources where 'Service Resource[IsActive]' is 'False'
+# Step 2: Sort resources by 'ShopResourceKey' and 'EffectiveStartDate' (latest first)
+resources_sorted = resources.sort_values(by=['ShopResourceKey', 'EffectiveStartDate'], ascending=[True, False])
+
+# Step 3: Drop duplicates in 'resources', keeping the latest 'EffectiveStartDate' for each 'ShopResourceKey'
+resources_unique = resources_sorted.drop_duplicates(subset=['ShopResourceKey'], keep='first')
+
+# Step 4: Add 'Active' status based on date range
+resources_unique['Active'] = resources_unique.apply(is_active, axis=1, args=(start_date, end_date))
+
+# Step 5: Merge 'shifts_filtered' with 'resources_unique' (add both 'Service Resource[IsActive]' and 'Active')
 shifts_filtered = shifts_filtered.merge(
-    resources[['ShopResourceKey', 'Service Resource[IsActive]']],
+    resources_unique[['ShopResourceKey', 'Service Resource[IsActive]', 'Active']],
     on='ShopResourceKey',
     how='left'
 )
 
-# Filter to keep only active resources
-shifts_filtered = shifts_filtered[shifts_filtered['Service Resource[IsActive]'] == 'True']
+# Step 6: Create a new key combining 'ShopResourceKey' and 'Shift[ShiftNumber]' to differentiate shifts
+shifts_filtered['UniqueShiftKey'] = shifts_filtered['ShopResourceKey'] + '_' + shifts_filtered['Shift[ShiftNumber]']
 
+# Step 7: Filter for only active resources
+shifts_filtered = shifts_filtered[(shifts_filtered['Service Resource[IsActive]'] == 'True') & (shifts_filtered['Active'] == True)]
 
-filtered_shifts = shifts_filtered[
-    (shifts_filtered['GT_ShopCode__c'] == 'A60') 
-]
-filtered_shifts
-resources['Active'] = resources.apply(is_active, axis=1, args=(start_date, end_date))
+# Step 8: Remove duplicates based on the 'UniqueShiftKey'
+shifts_filtered = shifts_filtered.drop_duplicates(subset=['UniqueShiftKey'])
 
-# Merge active resource information into the shifts data to ensure all resources are included
-shifts_filtered = shifts_filtered.merge(
-    resources[['ShopResourceKey', 'Active']], 
-    on='ShopResourceKey', 
-    how='left'
-)
+# Step 9: Check the filtered data for 'PersonalNumberKey' and 'ShiftDate'
+check = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '969_25367') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-09-02')]
 
-shifts_filtered['ShiftDate'].head()
-# Set ShiftDurationHours to 0 for inactive resources
-shifts_filtered.loc[shifts_filtered['Active'] == False, 'ShiftDurationHours'] = 0
+print(check)
 
+shifts_filtered.columns
 
 shifts_filtered['ShiftDurationHours'] = shifts_filtered['ShiftDurationHours'].fillna(0)
 
@@ -329,6 +334,14 @@ shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate']).agg
     
 }).reset_index()
 
+check= shifts_filtered[shifts_filtered['PersonalNumberKey'] == '969_25367']
+columns_to_display = ['GT_ServiceResource__r.Name', 'StartTime', 'ShiftDate', 'iso_week', 'iso_year', 
+                      'StartDateHour',  'ShiftDurationHours', 'Service Resource[IsActive]', 'Active']
+
+check_filtered = check[columns_to_display]
+
+# Display the filtered DataFrame
+check_filtered
 # Merge expanded_absences with shifts data to calculate adjusted shift hours
 sfshifts_merged = pd.merge(
     shifts_grouped,
@@ -347,8 +360,8 @@ sfshifts_merged['ShiftDurationHoursAdjusted'] = sfshifts_merged['ShiftDurationHo
 sfshifts_merged['ShiftDurationMinutesAdjusted'] = sfshifts_merged['ShiftDurationHoursAdjusted'] * 60
 sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate'])
 
-check= sfshifts_merged[sfshifts_merged['PersonalNumberKey'] == '969_25367']
-
+check = sfshifts_merged[(sfshifts_merged['PersonalNumberKey'] == '969_25367') & (pd.to_datetime(sfshifts_merged['ShiftDate'], errors='coerce') == '2024-09-02')]
+check
 # Identify duplicates based on the specified subset of columns
 duplicate_mask = appointments.duplicated(subset=[
     'Shop[GT_CountryCode__c]',
@@ -493,9 +506,8 @@ shift_slots['TotalSlots_gross'] = shift_slots['TotalSlots_gross'].fillna(0)
 shift_slots['TotalHours'] = shift_slots['TotalHours'].fillna(0)
 
 # Test shop 'C07' to check final output
-a = shift_slots[shift_slots['GT_ShopCode__c'] == 'C07']
+a = shift_slots[shift_slots['GT_ShopCode__c'] == 'A60']
 
-print(a[['ShiftDurationHours', 'date',  'REGION', 'AREA', 'Shop[Name]', 'BlockedHoursPercentage', 'TotalHours', 'BlockedHours','TotalBookedSlots', 'OpenHours', 'BookedHours']])
 
 # Step 5: Recalculate `TotalBookedSlots` based on the total booked slots by date
 shift_slots = pd.merge(
@@ -643,7 +655,7 @@ all_composite_keys = pd.merge(
 
 # Step 5: Add region, area, and shop (DESCR) mapping data based on the merged composite keys
 all_composite_keys['ShopCode_3char'] = all_composite_keys['CompositeKey'].str[:3]  # Extract the ShopCode_3char from CompositeKey
-all_composite_keys['ISO_Week'] = all_composite_keys['CompositeKey'].apply(lambda x: x.split('_')[-1])
+all_composite_keys['iso_week'] = all_composite_keys['CompositeKey'].apply(lambda x: x.split('_')[-1])
 # Merge with the region_mapping to add the 'REGION', 'AREA', and 'DESCR' (Shop Name)
 all_composite_keys = pd.merge(
     all_composite_keys,
@@ -652,7 +664,7 @@ all_composite_keys = pd.merge(
     right_on='CODE',
     how='left'
 )
-
+all_composite_keys.head()
 # Step 6: Final Calculations and Fill Missing Values
 all_composite_keys['Diferencia de duración'] = all_composite_keys['Duración HCM'].fillna(0) - all_composite_keys['Duración SF'].fillna(0)
 missing_region_rows = all_composite_keys[all_composite_keys['REGION'].isna()]
@@ -660,7 +672,7 @@ print(missing_region_rows)
 
 # Step 7: Final output structure and rename columns
 all_composite_keys = all_composite_keys[[
-    'CompositeKey', 'Duración SF', 'Duración HCM', 'Diferencia de duración', 'REGION', 'AREA', 'DESCR'
+    'CompositeKey', 'Duración SF', 'Duración HCM', 'Diferencia de duración', 'REGION', 'AREA', 'DESCR', 'iso_week'
 ]]
 
 # Rename for clarity
@@ -668,9 +680,14 @@ all_composite_keys.rename(columns={
     'CompositeKey': 'Clave compuesta',
     'REGION': 'REGION',
     'AREA': 'AREA',
-    'DESCR': 'Shop Name'
+    'DESCR': 'Shop Name',
 }, inplace=True)
-all_composite_keys
+# Remove rows where REGION is blank (i.e., NaN)
+all_composite_keys = all_composite_keys[all_composite_keys['REGION'].notna()]
+
+# Fill NaN values in the following columns with 0
+all_composite_keys[['Duración SF', 'Duración HCM', 'Diferencia de duración']] = all_composite_keys[['Duración SF', 'Duración HCM', 'Diferencia de duración']].fillna(0)
+
 # Step 7: Save the result to Excel
 output_file_path1 = 'hcm_sf_merged.xlsx'
 all_composite_keys.to_excel(output_file_path1, index=False, engine='openpyxl')
