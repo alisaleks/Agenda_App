@@ -142,7 +142,8 @@ absences.rename(columns={
 # Load regionmapping data
 region_mapping_path = 'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/regionmapping.xlsx'
 region_mapping = load_excel(region_mapping_path)
-
+region_mapping.columns
+region_mapping['SYN'].head()
 sfshifts['StartTime'] = pd.to_datetime(sfshifts['Shift[StartTime]'], errors='coerce')
 sfshifts['EndTime'] = pd.to_datetime(sfshifts['Shift[EndTime]'], errors='coerce')
 start_date = datetime(2024, 9, 1)
@@ -193,20 +194,28 @@ shifts_filtered['ShiftDurationHours'] = (shifts_filtered['EndTime'] - shifts_fil
 
 shifts_filtered['ShopResourceKey'] = shifts_filtered['GT_ShopCode__c'] + shifts_filtered['Shift[ServiceResourceId]']
 resources['ShopResourceKey'] = resources['GT_ShopCode__c'] + resources['Service Territory Member[ServiceResourceId]']
-resources['IsActive'] = resources.apply(is_active, axis=1, args=(start_date, end_date))
-
-# Merge active resource information into the shifts data to ensure all resources are included
+# Filter out resources where 'Service Resource[IsActive]' is 'False'
+resources = resources[resources['Service Resource[IsActive]'] != 'False']
+# Continue with merging active resource information into the shifts data
 shifts_filtered = shifts_filtered.merge(
     resources[['ShopResourceKey', 'IsActive']], 
     on='ShopResourceKey', 
     how='left'
 )
 
-# Set ShiftDurationHours to 0 for inactive resources
-shifts_filtered.loc[shifts_filtered['IsActive'] == False, 'ShiftDurationHours'] = 0
+resources['Active'] = resources.apply(is_active, axis=1, args=(start_date, end_date))
 
-# Filter out inactive resources
-shifts_filtered = shifts_filtered[shifts_filtered['IsActive'] == True]
+# Merge active resource information into the shifts data to ensure all resources are included
+shifts_filtered = shifts_filtered.merge(
+    resources[['ShopResourceKey', 'Active']], 
+    on='ShopResourceKey', 
+    how='left'
+)
+shifts_filtered[shifts_filtered['GT_ShopCode__c'] == 'A60'].head(10)
+
+# Set ShiftDurationHours to 0 for inactive resources
+shifts_filtered.loc[shifts_filtered['Active'] == False, 'ShiftDurationHours'] = 0
+
 
 shifts_filtered['ShiftDurationHours'] = shifts_filtered['ShiftDurationHours'].fillna(0)
 
