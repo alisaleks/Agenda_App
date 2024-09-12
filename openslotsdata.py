@@ -52,6 +52,7 @@ resources_columns_to_string = {
 'Service Territory Member[EffectiveStartDate]': str,
 'Service Territory Member[EffectiveEndDate]': str,
 'Service Resource[GT_Role__c]': str,
+'Service Resource[IsActive]' : str,
 'Service Resource[GT_PersonalNumber__c]': str
 }
 appointments_columns_to_string = {
@@ -101,11 +102,10 @@ resources = load_csv(
         'Shop[GT_CountryCode__c]', 'Service Territory Member[EffectiveEndDate]', 
         'Service Territory Member[EffectiveStartDate]', 'Shop[Country]', 
         'Service Territory Member[ServiceTerritoryId]', 'Shop[GT_ShopCode__c]', 
-        'Service Territory Member[ServiceResourceId]', 'Service Resource[GT_PersonalNumber__c]', 
+        'Service Territory Member[ServiceResourceId]', 'Service Resource[GT_PersonalNumber__c]', 'Service Resource[IsActive]',
         'Service Resource[GT_Role__c]'
     ]
 )
-
 
 appointments = load_excel(
     'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/Appointments_aug_oct.xlsx', 
@@ -205,8 +205,10 @@ shifts_filtered = shifts_filtered.merge(
 # Set ShiftDurationHours to 0 for inactive resources
 shifts_filtered.loc[shifts_filtered['IsActive'] == False, 'ShiftDurationHours'] = 0
 
-shifts_filtered['ShiftDurationHours'] = shifts_filtered['ShiftDurationHours'].fillna(0)
+# Filter out inactive resources
+shifts_filtered = shifts_filtered[shifts_filtered['IsActive'] == True]
 
+shifts_filtered['ShiftDurationHours'] = shifts_filtered['ShiftDurationHours'].fillna(0)
 
 absences['Start'] = pd.to_datetime(absences['Start'], errors='coerce')
 absences['End'] = pd.to_datetime(absences['End'], errors='coerce')
