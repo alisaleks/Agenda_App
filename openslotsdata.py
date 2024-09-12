@@ -643,7 +643,7 @@ all_composite_keys = pd.merge(
 
 # Step 5: Add region, area, and shop (DESCR) mapping data based on the merged composite keys
 all_composite_keys['ShopCode_3char'] = all_composite_keys['CompositeKey'].str[:3]  # Extract the ShopCode_3char from CompositeKey
-all_composite_keys.head()
+all_composite_keys['ISO_Week'] = all_composite_keys['CompositeKey'].apply(lambda x: x.split('_')[-1])
 # Merge with the region_mapping to add the 'REGION', 'AREA', and 'DESCR' (Shop Name)
 all_composite_keys = pd.merge(
     all_composite_keys,
