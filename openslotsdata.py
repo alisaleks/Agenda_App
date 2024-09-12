@@ -151,8 +151,6 @@ sfshifts['EndTime'] = pd.to_datetime(sfshifts['Shift[EndTime]'], errors='coerce'
 start_date = datetime(2024, 9, 1) 
 end_date = datetime(2024, 10, 6)
 shifts_filtered = sfshifts[(sfshifts['StartTime'] >= start_date) & (sfshifts['EndTime'] <= end_date)].copy()
-# Check if shop '978' exists after filtering shifts
-
 # Rename columns to match
 shifts_filtered.rename(columns={
     'Shop[GT_ShopCode__c]': 'GT_ShopCode__c',
@@ -196,16 +194,25 @@ shifts_filtered['ShiftDurationHours'] = (shifts_filtered['EndTime'] - shifts_fil
 
 shifts_filtered['ShopResourceKey'] = shifts_filtered['GT_ShopCode__c'] + shifts_filtered['Shift[ServiceResourceId]']
 resources['ShopResourceKey'] = resources['GT_ShopCode__c'] + resources['Service Territory Member[ServiceResourceId]']
-# Filter out resources where 'Service Resource[IsActive]' is 'False'
-resources = resources[resources['Service Resource[IsActive]'] != 'False']
+
+
 resources.columns
-# Continue with merging active resource information into the shifts data
+shifts_filtered.columns
+# Filter out resources where 'Service Resource[IsActive]' is 'False'
 shifts_filtered = shifts_filtered.merge(
-    resources[['ShopResourceKey', 'Service Resource[IsActive]']], 
-    on='ShopResourceKey', 
+    resources[['ShopResourceKey', 'Service Resource[IsActive]']],
+    on='ShopResourceKey',
     how='left'
 )
 
+# Filter to keep only active resources
+shifts_filtered = shifts_filtered[shifts_filtered['Service Resource[IsActive]'] == 'True']
+
+
+filtered_shifts = shifts_filtered[
+    (shifts_filtered['GT_ShopCode__c'] == 'A60') 
+]
+filtered_shifts
 resources['Active'] = resources.apply(is_active, axis=1, args=(start_date, end_date))
 
 # Merge active resource information into the shifts data to ensure all resources are included
@@ -214,8 +221,8 @@ shifts_filtered = shifts_filtered.merge(
     on='ShopResourceKey', 
     how='left'
 )
-shifts_filtered[shifts_filtered['GT_ShopCode__c'] == 'A60'].head(10)
 
+shifts_filtered['ShiftDate'].head()
 # Set ShiftDurationHours to 0 for inactive resources
 shifts_filtered.loc[shifts_filtered['Active'] == False, 'ShiftDurationHours'] = 0
 
@@ -522,10 +529,14 @@ shift_slots['month'] = shift_slots['date'].dt.strftime('%B')
 
 # Remove Sundays if needed
 shift_slots = shift_slots[shift_slots['weekday'] != 'Sunday']
-
+shift_slots.columns
 # Sort the shift_slots DataFrame by 'date'
 shift_slots = shift_slots.sort_values(by='date')
-
+shift_slots.rename(columns={
+    'REGION': 'Region',
+    'AREA': 'Area',
+    'DESCR': 'Shop[Name]'
+}, inplace=True)
 # Save to Excel
 output_file_path = 'shiftslots.xlsx'
 shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')
@@ -557,7 +568,7 @@ sfshifts_merged.drop(columns=['CODE'], inplace=True)
 sfshifts_merged.fillna(0, inplace=True)
 
 sfshifts_merged['weekday'] = sfshifts_merged['ShiftDate'].dt.day_name()
-
+sfshifts_merged.columns
 # Save to Excel
 output_file_path2 = 'hcpshiftslots.xlsx'
 sfshifts_merged.to_excel(output_file_path2, index=False, engine='openpyxl')
