@@ -515,112 +515,11 @@ shift_slots = shift_slots.sort_values(by='date')
 output_file_path = 'shiftslots.xlsx'
 shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')
 
-#TAB3
-
-# Reading HCMShifts CSV
-hcm_file = 'HCMShifts.csv'
-hcm_columns_to_string = {
-    'Shop[Shop Code - Descr]': str,
-    'Unique Employee[Employee Full Name]': str,
-    'Unique Employee[Employee Person Number]': str
-}
-
-HCMdata = pd.read_csv(hcm_file, engine='python', dtype=hcm_columns_to_string,  usecols=['Shop[Shop Code - Descr]', 'Unique Employee[Employee Full Name]',
-       'Unique Employee[Employee Person Number]', 'Calendar[Date]',
-       'Calendar[ISO Week]', 'Calendar[ISO Year]', 
-       '[Audiologist_FTE]'])
-
-
-# Extract the first three characters from Shop Code and create the new key
-HCMdata['ShopCode_3char'] = HCMdata['Shop[Shop Code - Descr]'].str[:3]
-HCMdata['Key'] = HCMdata['ShopCode_3char'] + '_' + HCMdata['Unique Employee[Employee Person Number]'].astype(str)
-HCMdata['CompositeKey'] = HCMdata['Key'].astype(str) + '_' + HCMdata['Calendar[ISO Year]'].astype(str) + '_' + HCMdata['Calendar[ISO Week]'].astype(str)
-sfshifts_merged['CompositeKey'] = sfshifts_merged['PersonalNumberKey'].astype(str) + '_'+ sfshifts_merged['iso_year'].astype(str)+'_'+ sfshifts_merged['iso_week'].astype(str) 
-
-# Group SFshifts by 'Clave' and 'iso_week' and sum the 'Duración del turno'
-shift_duration_per_week = sfshifts_merged.groupby(['CompositeKey'])['ShiftDurationHoursAdjusted'].sum().reset_index()
-
-# Merge the summed durations back to HCMdata based on the composite key
-HCMdata = HCMdata.merge(shift_duration_per_week[['CompositeKey', 'ShiftDurationHoursAdjusted']], on='CompositeKey', how='left')
-
-def get_previous_weeks_range(n=2):
-    today = datetime.today()
-    current_iso_week = today.isocalendar()[1]
-    start_iso_week = max(1, current_iso_week - n)
-    return start_iso_week
-
-start_iso_week = get_previous_weeks_range()
-current_iso_year = datetime.today().isocalendar()[0]
-HCMdata = HCMdata[(HCMdata['Calendar[ISO Week]'] >= start_iso_week) & (HCMdata['Calendar[ISO Year]'] == current_iso_year)]
-
-# Summing shift durations per week per key per year in HCMdata and multiplying by 40
-HCMdata_summed = HCMdata.groupby(['CompositeKey', 'Calendar[ISO Year]', 'Calendar[ISO Week]'])['[Audiologist_FTE]'].sum().reset_index()
-HCMdata_summed['[Audiologist_FTE]'] = HCMdata_summed['[Audiologist_FTE]'] * 40
-
-# Ensure 'Año ISO' and 'Semana ISO' columns exist in both dataframes
-shift_duration_per_week = shift_duration_per_week.merge(
-    sfshifts_merged[['CompositeKey', 'iso_year', 'iso_week']],
-    on='CompositeKey', how='left'
-).drop_duplicates()
-
-# Rename columns for clarity
-HCMdata_summed.rename(columns={'Calendar[ISO Year]': 'Año ISO', 'Calendar[ISO Week]': 'Semana ISO', '[Audiologist_FTE]': 'Duración HCM'}, inplace=True)
-shift_duration_per_week.rename(columns={'ShiftDurationHoursAdjusted': 'Duración SF','iso_year':'Año ISO', 'iso_week':'Semana ISO' }, inplace=True)
-# Create a combined DataFrame with all unique composite keys from both HCMdata_summed and shift_duration_per_week
-all_composite_keys = pd.DataFrame({
-    'CompositeKey': pd.concat([HCMdata_summed['CompositeKey'], shift_duration_per_week['CompositeKey']]).unique()
-})
-
-# Extract the corresponding ISO year and week for each composite key from shift_duration_per_week and HCMdata_summed
-all_composite_keys = all_composite_keys.merge(
-    shift_duration_per_week[['CompositeKey', 'Año ISO', 'Semana ISO']].drop_duplicates(),
-    on='CompositeKey', how='left'
-).merge(
-    HCMdata_summed[['CompositeKey', 'Año ISO', 'Semana ISO']].drop_duplicates(),
-    on='CompositeKey', how='left'
-)
-
-# Fill missing values for ISO year and week from the other source if missing in one
-all_composite_keys['Año ISO'] = all_composite_keys['Año ISO_x'].combine_first(all_composite_keys['Año ISO_y'])
-all_composite_keys['Semana ISO'] = all_composite_keys['Semana ISO_x'].combine_first(all_composite_keys['Semana ISO_y'])
-
-# Drop the temporary columns used for merging
-all_composite_keys.drop(columns=['Año ISO_x', 'Año ISO_y', 'Semana ISO_x', 'Semana ISO_y'], inplace=True)
-
-# Get the duration from shift_duration_per_week and HCMdata_summed
-all_composite_keys = all_composite_keys.merge(
-    shift_duration_per_week[['CompositeKey', 'Duración SF']],
-    on='CompositeKey', how='left'
-).merge(
-    HCMdata_summed[['CompositeKey', 'Duración HCM']],
-    on='CompositeKey', how='left'
-)
-
-# Calculate the difference in durations
-all_composite_keys['Diferencia de duración'] = all_composite_keys['Duración HCM'].fillna(0) - all_composite_keys['Duración SF'].fillna(0)
-
-# Select and rename columns for clarity
-all_composite_keys = all_composite_keys[[
-    'CompositeKey', 'Año ISO', 'Semana ISO', 'Duración SF', 'Duración HCM', 'Diferencia de duración'
-]].rename(columns={
-    'CompositeKey': 'Clave compuesta',
-    'Año ISO': 'Año ISO',
-    'Semana ISO': 'Semana ISO',
-    'Duración SF': 'Duración SF',
-    'Duración HCM': 'Duración HCM',
-    'Diferencia de duración': 'Diferencia de duración'
-})
-all_composite_keys.fillna(0, inplace=True)
-
-# Save to Excel
-output_file_path1 = 'hcm_sf_merged.xlsx'
-all_composite_keys.to_excel(output_file_path1, index=False, engine='openpyxl')
-
 
 #TAB4
 sfshifts_merged.head()
 # Step 3: Include Region, Area, and Shop[Name] information in the shops_dates DataFrame
-hcp_sfshifts_merged = pd.merge(
+sfshifts_merged = pd.merge(
     sfshifts_merged,
     region_mapping[['CODE', 'REGION', 'AREA', 'DESCR']],  
     left_on='GT_ShopCode__c',
@@ -628,22 +527,122 @@ hcp_sfshifts_merged = pd.merge(
     how='left'
 )
 
-missing_shop_codes = hcp_sfshifts_merged[hcp_sfshifts_merged['GT_ShopCode__c'].isna()]
+missing_shop_codes = sfshifts_merged[sfshifts_merged['GT_ShopCode__c'].isna()]
 print(missing_shop_codes[['GT_ShopCode__c', 'Shop[Name]', 'REGION', 'AREA', 'CODE', 'ShiftDurationHoursAdjusted']])
 
 # Rename columns to match the expected output
-hcp_sfshifts_merged.rename(columns={
+sfshifts_merged.rename(columns={
     'REGION': 'Region',
     'AREA': 'Area',
     'DESCR': 'Shop[Name]'
 }, inplace=True)
 
 # Step 4: Drop unnecessary columns
-hcp_sfshifts_merged.drop(columns=['CODE'], inplace=True)
-hcp_sfshifts_merged.fillna(0, inplace=True)
+sfshifts_merged.drop(columns=['CODE'], inplace=True)
+sfshifts_merged.fillna(0, inplace=True)
 
-hcp_sfshifts_merged['weekday'] = hcp_sfshifts_merged['ShiftDate'].dt.day_name()
+sfshifts_merged['weekday'] = sfshifts_merged['ShiftDate'].dt.day_name()
 
 # Save to Excel
 output_file_path2 = 'hcpshiftslots.xlsx'
-hcp_sfshifts_merged.to_excel(output_file_path2, index=False, engine='openpyxl')
+sfshifts_merged.to_excel(output_file_path2, index=False, engine='openpyxl')
+# Step 1: Read and prepare HCMdata
+hcm_file = 'HCMShifts.csv'
+hcm_columns_to_string = {
+    'Shop[Shop Code - Descr]': str,
+    'Unique Employee[Employee Full Name]': str,
+    'Unique Employee[Employee Person Number]': str
+}
+
+HCMdata = pd.read_csv(hcm_file, engine='python', dtype=hcm_columns_to_string, usecols=[
+    'Shop[Shop Code - Descr]', 'Unique Employee[Employee Full Name]', 'Unique Employee[Employee Person Number]',
+    'Calendar[ISO Week]', 'Calendar[ISO Year]', '[Audiologist_FTE]'
+])
+
+def get_previous_weeks_range(n=2, future_weeks=3):
+    today = datetime.today()
+    current_iso_year, current_iso_week, _ = today.isocalendar()
+    
+    # Calculate the start ISO week based on the range (n weeks back)
+    start_iso_week = max(1, current_iso_week - n)
+    
+    # Calculate the future date (end week) by adding `future_weeks` to the current date
+    future_date = today + timedelta(weeks=future_weeks)
+    end_iso_year, end_iso_week, _ = future_date.isocalendar()
+    
+    return start_iso_week, end_iso_week, current_iso_year, end_iso_year
+
+# Example usage
+start_iso_week, end_iso_week, current_iso_year, end_iso_year = get_previous_weeks_range()
+print(f"Start ISO week: {start_iso_week}, End ISO week: {end_iso_week}, Current ISO year: {current_iso_year}, End ISO year: {end_iso_year}")
+
+# Filter HCMdata between start_iso_week and end_iso_week without considering the year
+HCMdata = HCMdata[
+    (HCMdata['Calendar[ISO Week]'] >= start_iso_week) &
+    (HCMdata['Calendar[ISO Week]'] <= end_iso_week)
+]
+
+
+# Create composite keys
+HCMdata['ShopCode_3char'] = HCMdata['Shop[Shop Code - Descr]'].str[:3]
+HCMdata['CompositeKey'] = HCMdata['ShopCode_3char'] + '_' + HCMdata['Unique Employee[Employee Person Number]'].astype(str) + '_' + HCMdata['Calendar[ISO Year]'].astype(str) + '_' + HCMdata['Calendar[ISO Week]'].astype(str)
+
+# Step 2: Group and sum data
+# Group by and sum '[Audiologist_FTE]'
+HCMdata_summed = HCMdata.groupby(
+    ['CompositeKey', 'Calendar[ISO Year]', 'Calendar[ISO Week]']
+).agg({
+    '[Audiologist_FTE]': 'sum'
+}).reset_index()
+
+# Multiply the '[Audiologist_FTE]' by 40 to get the duration
+HCMdata_summed['Duración HCM'] = HCMdata_summed['[Audiologist_FTE]'] * 40
+
+# Step 3: Process SF shifts data
+shift_duration_per_week = sfshifts_merged.groupby(
+    ['CompositeKey']
+).agg({
+    'ShiftDurationHours': 'sum'
+}).reset_index()
+
+shift_duration_per_week.rename(columns={'ShiftDurationHours': 'Duración SF'}, inplace=True)
+
+# Step 4: Merge both datasets (without region/area/shop data yet)
+all_composite_keys = pd.merge(
+    shift_duration_per_week[['CompositeKey', 'Duración SF']],  # From SF shifts
+    HCMdata_summed[['CompositeKey', 'Duración HCM']],  # From HCM data
+    on='CompositeKey', how='outer'
+)
+
+# Step 5: Add region, area, and shop (DESCR) mapping data based on the merged composite keys
+all_composite_keys['ShopCode_3char'] = all_composite_keys['CompositeKey'].str[:3]  # Extract the ShopCode_3char from CompositeKey
+
+# Merge with the region_mapping to add the 'REGION', 'AREA', and 'DESCR' (Shop Name)
+all_composite_keys = pd.merge(
+    all_composite_keys,
+    region_mapping[['CODE', 'REGION', 'AREA', 'DESCR']],  # Add the region and area mapping
+    left_on='ShopCode_3char',
+    right_on='CODE',
+    how='left'
+)
+
+# Step 6: Final Calculations and Fill Missing Values
+all_composite_keys['Diferencia de duración'] = all_composite_keys['Duración HCM'].fillna(0) - all_composite_keys['Duración SF'].fillna(0)
+all_composite_keys.fillna(0, inplace=True)
+
+# Step 7: Final output structure and rename columns
+all_composite_keys = all_composite_keys[[
+    'CompositeKey', 'Duración SF', 'Duración HCM', 'Diferencia de duración', 'REGION', 'AREA', 'DESCR'
+]]
+
+# Rename for clarity
+all_composite_keys.rename(columns={
+    'CompositeKey': 'Clave compuesta',
+    'REGION': 'Region',
+    'AREA': 'Area',
+    'DESCR': 'Shop Name'
+}, inplace=True)
+all_composite_keys
+# Step 7: Save the result to Excel
+output_file_path1 = 'hcm_sf_merged.xlsx'
+all_composite_keys.to_excel(output_file_path1, index=False, engine='openpyxl')
