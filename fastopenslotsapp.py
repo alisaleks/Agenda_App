@@ -8,6 +8,7 @@ from st_aggrid.shared import GridUpdateMode, DataReturnMode, ColumnsAutoSizeMode
 from st_aggrid.AgGridReturn import AgGridReturn
 import json
 import os
+import numpy as np
 
 @st.cache_data
 def load_excel(file_path, usecols=None, file_mod_time=None, **kwargs):
@@ -223,9 +224,11 @@ def filter_hcp_shift_slots(data, selected_region, selected_area, selected_shop):
         filtered_data = filtered_data[filtered_data['Shop[Name]'] == selected_shop]
 
     return filtered_data
+
 # Apply the filters for the other datasets
 filtered_data = filter_data(shift_slots, iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
 filtered_hcp_shift_slots = filter_hcp_shift_slots(hcp_shift_slots, selected_region, selected_area, selected_shop)
+weekly_shift_slots = filter_hcp_shift_slots(shift_slots, selected_region, selected_area, selected_shop)
 
 # Apply the filters to HCM data (without iso_week filter)
 filtered_hcm = filter_hcm_data(hcm, selected_region, selected_area, selected_shop)
@@ -237,6 +240,8 @@ if filtered_data.empty:
 if filtered_hcp_shift_slots.empty:
     st.warning("No shops found for the selected filter criteria.")
 if filtered_hcm.empty:
+    st.warning("No shops found for the selected filter criteria.")
+if weekly_shift_slots.empty:
     st.warning("No shops found for the selected filter criteria.")
 
 # Filter data for the previous ISO week without applying the current filters (directly from shift_slots)
@@ -933,163 +938,189 @@ with tab4:
         custom_css=custom_css  # Apply custom CSS
     )
 
-with tab5:
-    # Streamlit header for the table
-    st.markdown("### Weekly Overview")
+    with tab5:
+        # Streamlit header for the table
+        st.markdown("### Weekly Overview")
 
-    # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
-    weekly_aggregated = shift_slots.groupby('iso_week').agg(
-        TotalHours=('ShiftDurationHours', 'sum'),
-        BlockedHours=('AbsenceDurationHours', 'sum'),
-        AvailableHours=('ShiftDurationHoursAdjusted', 'sum'),
-        BookedHours=('BookedHours', 'sum')
-    ).reset_index()
+        # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
+        weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
+            TotalHours=('ShiftDurationHours', 'sum'),
+            BlockedHours=('AbsenceDurationHours', 'sum'),
+            AvailableHours=('ShiftDurationHoursAdjusted', 'sum'),
+            BookedHours=('BookedHours', 'sum')
+        ).reset_index()
 
-    # Step 2: Compute the percentage change week-over-week
-    weekly_aggregated['TotalHours_Pct_Change'] = weekly_aggregated['TotalHours'].pct_change() * 100
-    weekly_aggregated['BlockedHours_Pct_Change'] = weekly_aggregated['BlockedHours'].pct_change() * 100
-    weekly_aggregated['AvailableHours_Pct_Change'] = weekly_aggregated['AvailableHours'].pct_change() * 100
-    weekly_aggregated['BookedHours_Pct_Change'] = weekly_aggregated['BookedHours'].pct_change() * 100
-    
-    weekly_aggregated.set_index('iso_week', inplace=True)
-    transposed_weekly_aggregated = weekly_aggregated.T
-    # Step 1: Separate the total figures
-    totals_table = transposed_weekly_aggregated.loc[['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours']]
+        weekly_aggregated = weekly_aggregated.fillna(0)
 
-    # Step 2: Separate the percentage changes
-    percentages_table = transposed_weekly_aggregated.loc[['TotalHours_Pct_Change', 'BlockedHours_Pct_Change','AvailableHours_Pct_Change', 'BookedHours_Pct_Change']]
+    # Step 2: Compute the percentage change week-over-week using numpy where
+        def calculate_pct_change_vectorized(current, previous):
+            # Vectorized condition:
+            # - If previous value is 0, we return 0 (no division by zero)
+            # - If current == previous, return 0 (no change)
+            # - Else calculate the percentage change
+            return np.where(previous == 0, 0, np.where(current == previous, 0, (current - previous) / abs(previous) * 100))
 
-    # Convert iso_week to a string and rename columns to 'Week {iso_week}'
-    totals_table.columns = [f"Week {int(col)}" for col in totals_table.columns.get_level_values(0)]
-    percentages_table.columns = [f"Week {int(col)}" for col in percentages_table.columns.get_level_values(0)]
+        # Apply the percentage change calculation across each column and handle NaN using np.nan_to_num
+        weekly_aggregated['TotalHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
+            weekly_aggregated['TotalHours'], weekly_aggregated['TotalHours'].shift(1).fillna(0)
+        ))
 
-    # Custom CSS for the table (same as Tab 2, adjusted if needed)
-    custom_css_tab5 = {
-        ".ag-header-cell": {
-            "background-color": "#cc0641 !important",  
-            "color": "white !important",
-            "font-weight": "bold",
-            "padding": "4px"
-        },
-        ".ag-cell": {
-            "padding": "2px",
-            "font-size": "12px"
-        },
-        ".ag-header": {
-            "height": "35px"
-        },
-        ".ag-theme-streamlit .ag-row": {
-            "max-height": "30px"
-        },
-        ".ag-theme-streamlit .ag-root-wrapper": {
-            "border": "2px solid #cc0641",
-            "border-radius": "5px"
-        }
-    }
-    # JavaScript code for custom cell styling
-    js_code_tab5 = JsCode("""
-    function(params) {
-        var value = params.value;
+        weekly_aggregated['BlockedHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
+            weekly_aggregated['BlockedHours'], weekly_aggregated['BlockedHours'].shift(1).fillna(0)
+        ))
 
-        // Check for BlockedHours specific styling
-        if (params.colDef.headerName.includes('BlockedHours') && value > 50) {
-            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for BlockedHours > 50
-        } else if (params.colDef.headerName.includes('BlockedHours') && value <= 50 && value > 0) {
-            return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for 0 < BlockedHours <= 50
-        } else if (params.colDef.headerName.includes('BlockedHours') && value === 0) {
-            return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for BlockedHours = 0
-        }
-        // Check for Pct_Change specific styling
-        if (params.colDef.headerName.includes('Pct_Change')) {
-            if (value > 0) {
-                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for positive percentage change
-            } else if (value < 0) {
-                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for negative percentage change
+        weekly_aggregated['AvailableHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
+            weekly_aggregated['AvailableHours'], weekly_aggregated['AvailableHours'].shift(1).fillna(0)
+        ))
+
+        weekly_aggregated['BookedHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
+            weekly_aggregated['BookedHours'], weekly_aggregated['BookedHours'].shift(1).fillna(0)
+        ))
+
+        weekly_aggregated.set_index('iso_week', inplace=True)
+        transposed_weekly_aggregated = weekly_aggregated.T
+        # Step 1: Separate the total figures
+        totals_table = transposed_weekly_aggregated.loc[['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours']]
+
+        # Step 2: Separate the percentage changes
+        percentages_table = transposed_weekly_aggregated.loc[['TotalHours % Change', 'BlockedHours % Change','AvailableHours % Change', 'BookedHours % Change']]
+
+        # Convert iso_week to a string and rename columns to 'Week {iso_week}'
+        totals_table.columns = [f"Week {int(col)}" for col in totals_table.columns.get_level_values(0)]
+        percentages_table.columns = [f"Week {int(col)}" for col in percentages_table.columns.get_level_values(0)]
+
+        # Custom CSS for the table (same as Tab 2, adjusted if needed)
+        custom_css_tab5 = {
+            ".ag-header-cell": {
+                "background-color": "#cc0641 !important",  
+                "color": "white !important",
+                "font-weight": "bold",
+                "padding": "4px"
+            },
+            ".ag-cell": {
+                "padding": "2px",
+                "font-size": "12px"
+            },
+            ".ag-header": {
+                "height": "35px"
+            },
+            ".ag-theme-streamlit .ag-row": {
+                "max-height": "30px"
+            },
+            ".ag-theme-streamlit .ag-root-wrapper": {
+                "border": "2px solid #cc0641",
+                "border-radius": "5px"
             }
         }
-        return null;  // Default style if no condition matches
-    }
+        js_code_tab5_pct_change = JsCode("""
+        function(params) {
+            // Get the field name
+            var field = params.colDef.field;
+            
+            // Get the percentage change values for the current data row
+            var pctChangeValue = params.data[field];
+            var blockedHoursPctChange = params.data['BlockedHours % Change'];
+
+            // Apply general styling for all percentage change columns
+            if (pctChangeValue >= 0) {
+                var generalStyle = {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for positive percentage change
+            } else if (pctChangeValue < 0) {
+                var generalStyle = {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for negative percentage change
+            } else {
+                var generalStyle = null;  // Default styling for zero or undefined percentage change
+            }
+
+            // Specific override for 'BlockedHours % Change'
+            if (field === 'BlockedHours % Change') {
+                if (blockedHoursPctChange < 0) {
+                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative BlockedHours % Change
+                } else if (blockedHoursPctChange >= 0) {
+                    return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive BlockedHours % Change
+                }
+                return null;  // Default styling for zero BlockedHours % Change
+            }
+
+            // Return the general style for all other columns
+            return generalStyle;
+        }
     """)
 
-    # Ensure that the pivot tables include the Metric column
-    pivot_total = totals_table.reset_index().rename(columns={'index': 'Metric'})
-    pivot_pct_change = percentages_table.reset_index().rename(columns={'index': 'Metric'})
 
-    # Create column definitions
-    columnDefs_tab5_total = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
-    columnDefs_tab5_pct_change = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
+        # Ensure that the pivot tables include the Metric column
+        pivot_total = totals_table.reset_index().rename(columns={'index': 'Metric'})
+        pivot_pct_change = percentages_table.reset_index().rename(columns={'index': 'Metric'})
 
-    # Add week columns for totals
-    for column in pivot_total.columns[1:]:
-        columnDefs_tab5_total.append({
-            "field": column,
-            "headerName": column,  # Use 'Week {iso_week}' as the header
-            "resizable": True,
-            "flex": 1,
-            "valueFormatter": "(x ? x.toFixed(1) : '')",
-            "cellStyle": js_code_tab5
-        })
+        # Create column definitions for total hours table
+        columnDefs_tab5_total = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
+        columnDefs_tab5_pct_change = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
 
-    # Add week columns for percentages
-    for column in pivot_pct_change.columns[2:]:
-        columnDefs_tab5_pct_change.append({
-            "field": column,
-            "headerName": column,  # Use 'Week {iso_week}' as the header
-            "valueFormatter": "(x ? x.toFixed(1) + ' %' : '')",  # Format percentage change with '%' sign
-            "resizable": True,
-            "flex": 1,
-            "cellStyle": js_code_tab5
-        })
+        # Add week columns for totals
+        for column in pivot_total.columns[1:]:
+            columnDefs_tab5_total.append({
+                "field": column,
+                "headerName": column,  # Use 'Week {iso_week}' as the header
+                "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) : '0')",
+                "resizable": True,
+                "flex": 1
+            })
 
-    # Configure GridOptionsBuilder for both tables
-    gb_tab5_total = GridOptionsBuilder.from_dataframe(pivot_total)
-    gb_tab5_pct_change = GridOptionsBuilder.from_dataframe(pivot_pct_change)
+        # Add week columns for percentages
+        for column in pivot_pct_change.columns[2:]:
+            columnDefs_tab5_pct_change.append({
+                "field": column,
+                "headerName": column,  # Use 'Week {iso_week}' as the header
+                "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) + ' %' : '0 %')", 
+                "resizable": True,
+                "flex": 1,
+                "cellStyle": js_code_tab5_pct_change  # Apply the specific function for the percentage table
+            })
 
-    # Apply JavaScript code to all columns, including 'Metric'
-    for col in pivot_total.columns:  # Ensure that 'Metric' is included
-        gb_tab5_total.configure_column(col, cellStyle=js_code_tab5)
+        # Configure GridOptionsBuilder for both tables
+        gb_tab5_total = GridOptionsBuilder.from_dataframe(pivot_total)
+        gb_tab5_pct_change = GridOptionsBuilder.from_dataframe(pivot_pct_change)
 
-    for col in pivot_pct_change.columns:  # Ensure that 'Metric' is included
-        gb_tab5_pct_change.configure_column(col, cellStyle=js_code_tab5)
 
-    # Grid options for auto-sizing and responsive layout
-    gb_tab5_total.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
-    gb_tab5_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+        for col in pivot_pct_change.columns:  # For the percentage change table
+            gb_tab5_pct_change.configure_column(col, cellStyle=js_code_tab5_pct_change)
 
-    # Build grid options
-    grid_options_tab5_total = gb_tab5_total.build()
-    grid_options_tab5_pct_change = gb_tab5_pct_change.build()
+        # Grid options for auto-sizing and responsive layout
+        gb_tab5_total.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+        gb_tab5_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
 
-    # Add custom column definitions to grid options
-    grid_options_tab5_total['columnDefs'] = columnDefs_tab5_total
-    grid_options_tab5_pct_change['columnDefs'] = columnDefs_tab5_pct_change
+        # Build grid options
+        grid_options_tab5_total = gb_tab5_total.build()
+        grid_options_tab5_pct_change = gb_tab5_pct_change.build()
 
-    # Render both pivot_total and pivot_pct_change tables using AgGrid
-    try:
-        st.markdown("### Total Hours Overview")
-        AgGrid(
-            pivot_total,
-            gridOptions=grid_options_tab5_total,
-            enable_enterprise_modules=True,
-            allow_unsafe_jscode=True,  # Allow JavaScript code execution
-            fit_columns_on_grid_load=True,  # Automatically fit columns on load
-            height=150,  # Set grid height for total table
-            width='100%',  # Set grid width
-            theme='streamlit',
-            custom_css=custom_css_tab5
-        )
+        # Add custom column definitions to grid options
+        grid_options_tab5_total['columnDefs'] = columnDefs_tab5_total
+        grid_options_tab5_pct_change['columnDefs'] = columnDefs_tab5_pct_change
 
-        st.markdown("### Percentage Change Overview")
-        AgGrid(
-            pivot_pct_change,
-            gridOptions=grid_options_tab5_pct_change,
-            enable_enterprise_modules=True,
-            allow_unsafe_jscode=True,  # Allow JavaScript code execution
-            fit_columns_on_grid_load=True,
-            height=150,  # Set grid height for percentage change table
-            width='100%',
-            theme='streamlit',
-            custom_css=custom_css_tab5
-        )
-    except Exception as ex:
-        st.error(f"An error occurred: {ex}")
+        # Render both pivot_total and pivot_pct_change tables using AgGrid
+        try:
+            st.markdown("### Total Hours Overview")
+            AgGrid(
+                pivot_total,
+                gridOptions=grid_options_tab5_total,
+                enable_enterprise_modules=True,
+                allow_unsafe_jscode=True,  # Allow JavaScript code execution
+                fit_columns_on_grid_load=True,  # Automatically fit columns on load
+                height=150,  # Set grid height for total table
+                width='100%',  # Set grid width
+                theme='streamlit',
+                custom_css=custom_css_tab5
+            )
+
+            st.markdown("### Percentage Change Overview")
+            AgGrid(
+                pivot_pct_change,
+                gridOptions=grid_options_tab5_pct_change,
+                enable_enterprise_modules=True,
+                allow_unsafe_jscode=True,  # Allow JavaScript code execution
+                fit_columns_on_grid_load=True,
+                height=150,  # Set grid height for percentage change table
+                width='100%',
+                theme='streamlit',
+                custom_css=custom_css_tab5
+            )
+        except Exception as ex:
+            st.error(f"An error occurred: {ex}")
