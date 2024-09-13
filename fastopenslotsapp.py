@@ -616,7 +616,7 @@ with tab3:
         </style>
         """, unsafe_allow_html=True)
 
-    # Use st.columns to position filters side by side in default Streamlit boxes
+    # Use st.columns to position filters side by side
     col1, col2 = st.columns(2)
 
     with col1:
@@ -638,75 +638,68 @@ with tab3:
 
     # Define the end of the current month
     end_of_month = today.replace(day=1) + pd.offsets.MonthEnd(0)
-    # Filter the columns based on the selected view type
+
+    # Color-coding JavaScript for Available and Blocked Hours
     if view_type == 'Available Hours':
         column_values = 'AvailableHours'
 
-        # Color-coding for Available Hours
-        color_coding_js = JsCode("""
-        function(params) {
+        color_coding_js = JsCode(f"""
+        function(params) {{
             var value = params.value;
 
-            if (params.data['Shop[Name]'] === 'Total') {
-                return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
-            } else if (value === 0) {
-                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Green for 0
-            } else if (value > 80) {
-                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Red for > 160
-            } else {
-                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for other values
-            }
-        }
+            if (params.data['Shop_Name'] === 'Total') {{
+                return {{'font-weight': 'bold', 'backgroundColor': '#e0e0e0'}};  // Grey background for total row
+            }} else if (params.colDef.headerName.includes('Total of Month')) {{
+                // Color coding for "Total of Month"
+                if (value === 0) {{
+                    return {{'backgroundColor': '#cc0641', 'color': 'black'}};  // Green for 0
+                }} else if (value > 80) {{
+                    return {{'backgroundColor': '#95cd41', 'color': 'white'}};  // Red for > 80
+                }} else {{
+                    return {{'backgroundColor': '#f1b84b', 'color': 'black'}};  // Orange for other values
+                }}
+            }} else {{
+                // Color coding for "Month to Go"
+                if (value === 0) {{
+                    return {{'backgroundColor': '#cc0641', 'color': 'black'}};  // Green for 0
+                }} else if (value > 80) {{
+                    return {{'backgroundColor': '#95cd41', 'color': 'white'}};  // Red for > 80
+                }} else {{
+                    return {{'backgroundColor': '#f1b84b', 'color': 'black'}};  // Orange for other values
+                }}
+            }}
+        }}
         """)
-
     else:
         column_values = 'BlockedHours'
 
-        # Color-coding for Blocked Hours
-        color_coding_js = JsCode("""
-        function(params) {
+        color_coding_js = JsCode(f"""
+        function(params) {{
             var value = params.value;
 
-            if (params.data['Shop[Name]'] === 'Total') {
-                return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
-            } else if (value === 0) {
-                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for 0
-            } else if (value > 0 && value < 8) {
-                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for > 0 and < 8
-            } else if (value >= 8) {
-                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for >= 8
-            }
-        }
+            if (params.data['Shop_Name'] === 'Total') {{
+                return {{'font-weight': 'bold', 'backgroundColor': '#e0e0e0'}};  // Grey background for total row
+            }} else if (params.colDef.headerName.includes('Total of Month')) {{
+                // Color coding for "Total of Month"
+                if (value === 0) {{
+                    return {{'backgroundColor': '#95cd41', 'color': 'black'}};  // Green for 0
+                }} else if (value >= 8) {{
+                    return {{'backgroundColor': '#cc0641', 'color': 'white'}};  // Red for >= 8
+                }} else {{
+                    return {{'backgroundColor': '#f1b84b', 'color': 'black'}};  // Orange for < 8
+                }}
+            }} else {{
+                // Color coding for "Month to Go"
+                if (value === 0) {{
+                    return {{'backgroundColor': '#95cd41', 'color': 'black'}};  // Green for 0
+                }} else if (value >= 8) {{
+                    return {{'backgroundColor': '#cc0641', 'color': 'white'}};  // Red for >= 8
+                }} else {{
+                    return {{'backgroundColor': '#f1b84b', 'color': 'black'}};  // Orange for < 8
+                }}
+            }}
+        }}
         """)
-
-    # Custom CSS for the AG-Grid table
-    custom_css = {
-        ".ag-header-cell": {
-            "background-color": "#cc0641 !important",  # Ensure entire cell background changes
-            "color": "white !important",
-            "font-weight": "bold",
-            "padding": "4px"  # Reduce padding to make headers more compact
-        },
-        ".ag-header-group-cell": {  # Style for merged/group headers
-            "background-color": "#cc0641 !important",
-            "color": "white !important",
-            "font-weight": "bold",
-        },
-        ".ag-cell": {
-            "padding": "2px",  # Reduce padding inside cells to make them more compact
-            "font-size": "12px"  # Reduce font size for a more compact look
-        },
-        ".ag-header": {
-            "height": "35px",  # Reduce header height
-        },
-        ".ag-theme-streamlit .ag-row": {
-            "max-height": "30px"  # Adjust max height for rows to be more compact
-        },
-        ".ag-theme-streamlit .ag-root-wrapper": {
-            "border": "2px solid #cc0641",  # Add outer border with specified color
-            "border-radius": "5px"  # Optional: Rounded corners for the outer border
-        }
-    }
 
     # Create a list to store pivot data for each day
     pivot_data = []
@@ -715,22 +708,17 @@ with tab3:
     if date_range_type == 'Month to Go':
         # Calculate the sum from each day to the end of the month
         for day in all_days_in_month:
-            # Filter data for each day from that day up to the end of the month
             day_data = hcp_data[(hcp_data['ShiftDate'] >= day) & (hcp_data['ShiftDate'] <= end_of_month)]
-            # Aggregate data based on your columns and create the pivot
             day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
             day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Month to Go']
             pivot_data.append(day_sum)
-
     # "Total of Month" calculation
     else:
         # Calculate the sum from the start of the month to each day
         for day in all_days_in_month:
-            # Filter data from the start of the month up to each day
             day_data = hcp_data[hcp_data['ShiftDate'] <= day]
-            # Aggregate data based on your columns and create the pivot
             day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
-            day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Month to Date']
+            day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Total of Month']
             pivot_data.append(day_sum)
 
     # Merge the daily data into one DataFrame
@@ -748,9 +736,9 @@ with tab3:
             "headerName": "Shop Name",
             "field": "Shop_Name",
             "resizable": True,
-            "flex": 2,  # Adjust flex value to make this column wider
-            "minWidth": 150,  # Set a minimum width for columns
-            "filter": 'agTextColumnFilter',  # Set filter type to text for shop name
+            "flex": 2,
+            "minWidth": 150,
+            "filter": 'agTextColumnFilter',
         },
         {
             "headerName": "Resource Name",
@@ -758,19 +746,19 @@ with tab3:
             "resizable": True,
             "flex": 2,
             "minWidth": 150,
-            "filter": 'agTextColumnFilter',  # Set filter type to text for resource name
+            "filter": 'agTextColumnFilter',
         }
     ]
 
-    # Append dynamic column definitions for each day in the month (excluding Sundays and capped at today)
+    # Append dynamic column definitions for each day
     for day in all_days_in_month:
         columnDefs.append({
             "headerName": f"{day.date()}",
             "field": f"{day.date()}_{date_range_type.replace(' ', '_')}",
-            "valueFormatter": "x.toFixed(1)",  # Format numeric values to 1 decimal place
+            "valueFormatter": "x.toFixed(1)",
             "resizable": True,
             "flex": 1,
-            "cellStyle": color_coding_js  # Apply color coding based on 'Month to Go' or 'Total of Month' values
+            "cellStyle": color_coding_js  # Apply color coding
         })
 
     # Calculate totals for numeric columns
@@ -800,10 +788,10 @@ with tab3:
         df_with_totals,
         gridOptions=grid_options_tab3,
         enable_enterprise_modules=True,
-        allow_unsafe_jscode=True,  # Allow JavaScript code execution
-        fit_columns_on_grid_load=True,  # Automatically fit columns on load
-        height=1000,  # Set grid height to 1000 pixels
-        width='100%',  # Set grid width to 100% of the available space
+        allow_unsafe_jscode=True,
+        fit_columns_on_grid_load=True,
+        height=1000,
+        width='100%',
         theme='streamlit',
         custom_css=custom_css  # Apply custom CSS
     )
@@ -954,10 +942,6 @@ with tab4:
 
     # Step 2: Compute the percentage change week-over-week using numpy where
         def calculate_pct_change_vectorized(current, previous):
-            # Vectorized condition:
-            # - If previous value is 0, we return 0 (no division by zero)
-            # - If current == previous, return 0 (no change)
-            # - Else calculate the percentage change
             return np.where(previous == 0, 0, np.where(current == previous, 0, (current - previous) / abs(previous) * 100))
 
         # Apply the percentage change calculation across each column and handle NaN using np.nan_to_num
@@ -1018,32 +1002,29 @@ with tab4:
             var field = params.colDef.field;
             
             // Get the percentage change values for the current data row
-            var pctChangeValue = params.data[field];
             var blockedHoursPctChange = params.data['BlockedHours % Change'];
-
-            // Apply general styling for all percentage change columns
-            if (pctChangeValue >= 0) {
-                var generalStyle = {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for positive percentage change
-            } else if (pctChangeValue < 0) {
-                var generalStyle = {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for negative percentage change
-            } else {
-                var generalStyle = null;  // Default styling for zero or undefined percentage change
-            }
+            var pctChangeValue = params.data[field];
 
             // Specific override for 'BlockedHours % Change'
             if (field === 'BlockedHours % Change') {
-                if (blockedHoursPctChange < 0) {
-                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative BlockedHours % Change
-                } else if (blockedHoursPctChange >= 0) {
+                if (blockedHoursPctChange <= 0) {
+                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative or zero BlockedHours % Change
+                } else if (blockedHoursPctChange > 0) {
                     return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive BlockedHours % Change
                 }
                 return null;  // Default styling for zero BlockedHours % Change
             }
 
-            // Return the general style for all other columns
-            return generalStyle;
+            // Apply general styling for all other percentage change columns
+            if (pctChangeValue >= 0) {
+                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for positive percentage change
+            } else if (pctChangeValue < 0) {
+                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for negative percentage change
+            }
+
+            return null;  // Default styling for zero or undefined percentage change
         }
-    """)
+        """)
 
 
         # Ensure that the pivot tables include the Metric column
@@ -1117,7 +1098,7 @@ with tab4:
                 enable_enterprise_modules=True,
                 allow_unsafe_jscode=True,  # Allow JavaScript code execution
                 fit_columns_on_grid_load=True,
-                height=150,  # Set grid height for percentage change table
+                height=160,  # Set grid height for percentage change table
                 width='100%',
                 theme='streamlit',
                 custom_css=custom_css_tab5
