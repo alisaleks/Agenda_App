@@ -351,6 +351,11 @@ sfshifts_merged = pd.merge(
     right_on=['PersonalNumberKey','AbsenceDate'],
     suffixes=('', '_absence')
 )
+# Adjust AbsenceDurationHours if ShiftDurationHours is greater
+sfshifts_merged['AbsenceDurationHours'] = sfshifts_merged.apply(
+    lambda row: row['ShiftDurationHours'] if row['ShiftDurationHours'] < row['AbsenceDurationHours'] else row['AbsenceDurationHours'],
+    axis=1
+)
 
 # Calculate the adjusted shift duration by subtracting the absence hours
 sfshifts_merged['ShiftDurationHoursAdjusted'] = sfshifts_merged['ShiftDurationHours'] - sfshifts_merged['AbsenceDurationHours'].fillna(0)
@@ -360,8 +365,12 @@ sfshifts_merged['ShiftDurationHoursAdjusted'] = sfshifts_merged['ShiftDurationHo
 sfshifts_merged['ShiftDurationMinutesAdjusted'] = sfshifts_merged['ShiftDurationHoursAdjusted'] * 60
 sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate'])
 
-check = sfshifts_merged[(sfshifts_merged['PersonalNumberKey'] == '969_25367') & (pd.to_datetime(sfshifts_merged['ShiftDate'], errors='coerce') == '2024-09-02')]
-check
+check = sfshifts_merged[(sfshifts_merged['PersonalNumberKey'] == '8DC_11316') & (pd.to_datetime(sfshifts_merged['ShiftDate'], errors='coerce') == '2024-09-13')]
+columns_to_display = ['ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']
+
+# Filter the DataFrame and select only the required columns
+check_filtered = check[columns_to_display]
+
 # Identify duplicates based on the specified subset of columns
 duplicate_mask = appointments.duplicated(subset=[
     'Shop[GT_CountryCode__c]',

@@ -209,9 +209,23 @@ def filter_hcm_data(data, selected_region, selected_area, selected_shop):
 
     return filtered_data
 
+@st.cache_data
+def filter_hcp_shift_slots(data, selected_region, selected_area, selected_shop):
+    filtered_data = data.copy()  # Copy data without applying iso_week filter
+
+    if selected_region != "All":
+        filtered_data = filtered_data[filtered_data['Region'] == selected_region]
+
+    if selected_area != "All":
+        filtered_data = filtered_data[filtered_data['Area'] == selected_area]
+
+    if selected_shop != "All":
+        filtered_data = filtered_data[filtered_data['Shop[Name]'] == selected_shop]
+
+    return filtered_data
 # Apply the filters for the other datasets
 filtered_data = filter_data(shift_slots, iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
-filtered_hcp_shift_slots = filter_data(hcp_shift_slots, iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
+filtered_hcp_shift_slots = filter_hcp_shift_slots(hcp_shift_slots, selected_region, selected_area, selected_shop)
 
 # Apply the filters to HCM data (without iso_week filter)
 filtered_hcm = filter_hcm_data(hcm, selected_region, selected_area, selected_shop)
@@ -274,13 +288,15 @@ aggregated_data['date'] = pd.to_datetime(aggregated_data['date']).dt.date
 check= aggregated_data[(aggregated_data['GT_ShopCode__c'] == '240')]
 
 
+
+
 # Aggregating data by GT_ShopCode__c, Shop[Name], date, and weekday
 hcp_data = filtered_hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceResource__r.Name', 'GT_ShopCode__c', 'Shop[Name]', 'ShiftDate', 'weekday']).agg(
     AvailableHours=('ShiftDurationHoursAdjusted', 'sum'),
     BlockedHours=('AbsenceDurationHours', 'sum'),
 ).reset_index()
 
-tab1, tab2, tab3, tab4 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage", "MTD/MTG", "HCM vs SF"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage", "MTD/MTG", "HCM vs SF", "Overview"])
 
 with tab1:        
     # Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
@@ -573,8 +589,6 @@ with tab2:
     except Exception as ex:
         st.error(f"An error occurred: {ex}")
 
-
-# In Tab 3, apply the same sidebar filters to the Tab 3 dataset before rendering it
 with tab3:
     st.markdown("""
         <style>
@@ -610,37 +624,55 @@ with tab3:
         st.markdown('<div class="custom-header">Select Date Range:</div>', unsafe_allow_html=True)
         date_range_type = st.radio("", ['Month to Go', 'Total of Month'], key="date_range_type")
 
-
     # Define the starting and ending dates for the current month, capping it to today
     today = pd.Timestamp(datetime.now().date())
     start_of_month = today.replace(day=1)
-    # Get all the days of the current month up to today, excluding Sundays
+    # Get all days from start of the month to today, excluding Sundays
     all_days_in_month = pd.date_range(start=start_of_month, end=today)
-    all_days_in_month = all_days_in_month[all_days_in_month.weekday != 6]  # Remove Sundays (6 represents Sunday)
+    all_days_in_month = all_days_in_month[all_days_in_month.weekday != 6]  # Remove Sundays
+
+    # Define the end of the current month
+    end_of_month = today.replace(day=1) + pd.offsets.MonthEnd(0)
     # Filter the columns based on the selected view type
     if view_type == 'Available Hours':
         column_values = 'AvailableHours'
+
+        # Color-coding for Available Hours
+        color_coding_js = JsCode("""
+        function(params) {
+            var value = params.value;
+
+            if (params.data['Shop[Name]'] === 'Total') {
+                return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
+            } else if (value === 0) {
+                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Green for 0
+            } else if (value > 80) {
+                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Red for > 160
+            } else {
+                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for other values
+            }
+        }
+        """)
+
     else:
         column_values = 'BlockedHours'
 
-    # Define color coding for 'Total of Month' or 'Month to Go'
-    color_coding_js = JsCode("""
-    function(params) {
-        var value = params.value;
-                             
-        if (params.data['Shop[Name]'] === 'Total') {
-            return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Make the total row bold and set a light background color for visibility
-        } else if (value === 0) {
-            return {'backgroundColor': '#95cd41', 'color': 'black'};  // Red for 0
-        } else if (value > 0 && value < 8) {
-            return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for > 0 and < 8
-        } else if (value >= 8) {
-            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Green for >= 8
-        }
-        return null;
-    }
-    """)
+        # Color-coding for Blocked Hours
+        color_coding_js = JsCode("""
+        function(params) {
+            var value = params.value;
 
+            if (params.data['Shop[Name]'] === 'Total') {
+                return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
+            } else if (value === 0) {
+                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for 0
+            } else if (value > 0 && value < 8) {
+                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for > 0 and < 8
+            } else if (value >= 8) {
+                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for >= 8
+            }
+        }
+        """)
 
     # Custom CSS for the AG-Grid table
     custom_css = {
@@ -671,33 +703,38 @@ with tab3:
         }
     }
 
-    # Prepare the data for "Month to Go" or "Total of Month" by calculating cumulative sums for each day in the month
+    # Create a list to store pivot data for each day
     pivot_data = []
 
+    # "Month to Go" calculation
     if date_range_type == 'Month to Go':
-        # Calculate the sum from each day to the end of the month (capped at today)
+        # Calculate the sum from each day to the end of the month
         for day in all_days_in_month:
-            day_data = hcp_data[hcp_data['ShiftDate'] >= day]
+            # Filter data for each day from that day up to the end of the month
+            day_data = hcp_data[(hcp_data['ShiftDate'] >= day) & (hcp_data['ShiftDate'] <= end_of_month)]
+            # Aggregate data based on your columns and create the pivot
             day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
             day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Month to Go']
             pivot_data.append(day_sum)
+
+    # "Total of Month" calculation
     else:
-        # Calculate the sum from the start of the month to each day (capped at today)
+        # Calculate the sum from the start of the month to each day
         for day in all_days_in_month:
+            # Filter data from the start of the month up to each day
             day_data = hcp_data[hcp_data['ShiftDate'] <= day]
+            # Aggregate data based on your columns and create the pivot
             day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
             day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Month to Date']
             pivot_data.append(day_sum)
 
-    # Merge the daily data into one DataFrame to display, filling blanks with zeros
+    # Merge the daily data into one DataFrame
     merged_data = pivot_data[0]
     for df in pivot_data[1:]:
         merged_data = pd.merge(merged_data, df, on=['Shop Name', 'Resource Name'], how='outer')
 
     # Fill in blanks with zeros
     merged_data.fillna(0, inplace=True)
-
-    # Ensure no spaces in field names in the merged DataFrame
     merged_data.columns = [col.replace(' ', '_') for col in merged_data.columns]
 
     # Dynamic column definitions with conditional formatting
@@ -765,6 +802,7 @@ with tab3:
         theme='streamlit',
         custom_css=custom_css  # Apply custom CSS
     )
+
 with tab4:
     # Pivot the table for Tab 4
     pivot_table_tab4 = filtered_hcm.pivot_table(
@@ -894,3 +932,164 @@ with tab4:
         theme='streamlit',
         custom_css=custom_css  # Apply custom CSS
     )
+
+with tab5:
+    # Streamlit header for the table
+    st.markdown("### Weekly Overview")
+
+    # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
+    weekly_aggregated = shift_slots.groupby('iso_week').agg(
+        TotalHours=('ShiftDurationHours', 'sum'),
+        BlockedHours=('AbsenceDurationHours', 'sum'),
+        AvailableHours=('ShiftDurationHoursAdjusted', 'sum'),
+        BookedHours=('BookedHours', 'sum')
+    ).reset_index()
+
+    # Step 2: Compute the percentage change week-over-week
+    weekly_aggregated['TotalHours_Pct_Change'] = weekly_aggregated['TotalHours'].pct_change() * 100
+    weekly_aggregated['BlockedHours_Pct_Change'] = weekly_aggregated['BlockedHours'].pct_change() * 100
+    weekly_aggregated['AvailableHours_Pct_Change'] = weekly_aggregated['AvailableHours'].pct_change() * 100
+    weekly_aggregated['BookedHours_Pct_Change'] = weekly_aggregated['BookedHours'].pct_change() * 100
+    
+    weekly_aggregated.set_index('iso_week', inplace=True)
+    transposed_weekly_aggregated = weekly_aggregated.T
+    # Step 1: Separate the total figures
+    totals_table = transposed_weekly_aggregated.loc[['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours']]
+
+    # Step 2: Separate the percentage changes
+    percentages_table = transposed_weekly_aggregated.loc[['TotalHours_Pct_Change', 'BlockedHours_Pct_Change','AvailableHours_Pct_Change', 'BookedHours_Pct_Change']]
+
+    # Convert iso_week to a string and rename columns to 'Week {iso_week}'
+    totals_table.columns = [f"Week {int(col)}" for col in totals_table.columns.get_level_values(0)]
+    percentages_table.columns = [f"Week {int(col)}" for col in percentages_table.columns.get_level_values(0)]
+
+    # Custom CSS for the table (same as Tab 2, adjusted if needed)
+    custom_css_tab5 = {
+        ".ag-header-cell": {
+            "background-color": "#cc0641 !important",  
+            "color": "white !important",
+            "font-weight": "bold",
+            "padding": "4px"
+        },
+        ".ag-cell": {
+            "padding": "2px",
+            "font-size": "12px"
+        },
+        ".ag-header": {
+            "height": "35px"
+        },
+        ".ag-theme-streamlit .ag-row": {
+            "max-height": "30px"
+        },
+        ".ag-theme-streamlit .ag-root-wrapper": {
+            "border": "2px solid #cc0641",
+            "border-radius": "5px"
+        }
+    }
+    # JavaScript code for custom cell styling
+    js_code_tab5 = JsCode("""
+    function(params) {
+        var value = params.value;
+
+        // Check for BlockedHours specific styling
+        if (params.colDef.headerName.includes('BlockedHours') && value > 50) {
+            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for BlockedHours > 50
+        } else if (params.colDef.headerName.includes('BlockedHours') && value <= 50 && value > 0) {
+            return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for 0 < BlockedHours <= 50
+        } else if (params.colDef.headerName.includes('BlockedHours') && value === 0) {
+            return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for BlockedHours = 0
+        }
+        // Check for Pct_Change specific styling
+        if (params.colDef.headerName.includes('Pct_Change')) {
+            if (value > 0) {
+                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for positive percentage change
+            } else if (value < 0) {
+                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for negative percentage change
+            }
+        }
+        return null;  // Default style if no condition matches
+    }
+    """)
+
+    # Ensure that the pivot tables include the Metric column
+    pivot_total = totals_table.reset_index().rename(columns={'index': 'Metric'})
+    pivot_pct_change = percentages_table.reset_index().rename(columns={'index': 'Metric'})
+
+    # Create column definitions
+    columnDefs_tab5_total = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
+    columnDefs_tab5_pct_change = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
+
+    # Add week columns for totals
+    for column in pivot_total.columns[1:]:
+        columnDefs_tab5_total.append({
+            "field": column,
+            "headerName": column,  # Use 'Week {iso_week}' as the header
+            "resizable": True,
+            "flex": 1,
+            "valueFormatter": "(x ? x.toFixed(1) : '')",
+            "cellStyle": js_code_tab5
+        })
+
+    # Add week columns for percentages
+    for column in pivot_pct_change.columns[2:]:
+        columnDefs_tab5_pct_change.append({
+            "field": column,
+            "headerName": column,  # Use 'Week {iso_week}' as the header
+            "valueFormatter": "(x ? x.toFixed(1) + ' %' : '')",  # Format percentage change with '%' sign
+            "resizable": True,
+            "flex": 1,
+            "cellStyle": js_code_tab5
+        })
+
+    # Configure GridOptionsBuilder for both tables
+    gb_tab5_total = GridOptionsBuilder.from_dataframe(pivot_total)
+    gb_tab5_pct_change = GridOptionsBuilder.from_dataframe(pivot_pct_change)
+
+    # Apply JavaScript code to all columns, including 'Metric'
+    for col in pivot_total.columns:  # Ensure that 'Metric' is included
+        gb_tab5_total.configure_column(col, cellStyle=js_code_tab5)
+
+    for col in pivot_pct_change.columns:  # Ensure that 'Metric' is included
+        gb_tab5_pct_change.configure_column(col, cellStyle=js_code_tab5)
+
+    # Grid options for auto-sizing and responsive layout
+    gb_tab5_total.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+    gb_tab5_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+
+    # Build grid options
+    grid_options_tab5_total = gb_tab5_total.build()
+    grid_options_tab5_pct_change = gb_tab5_pct_change.build()
+
+    # Add custom column definitions to grid options
+    grid_options_tab5_total['columnDefs'] = columnDefs_tab5_total
+    grid_options_tab5_pct_change['columnDefs'] = columnDefs_tab5_pct_change
+
+    # Render both pivot_total and pivot_pct_change tables using AgGrid
+    try:
+        st.markdown("### Total Hours Overview")
+        AgGrid(
+            pivot_total,
+            gridOptions=grid_options_tab5_total,
+            enable_enterprise_modules=True,
+            allow_unsafe_jscode=True,  # Allow JavaScript code execution
+            fit_columns_on_grid_load=True,  # Automatically fit columns on load
+            height=150,  # Set grid height for total table
+            width='100%',  # Set grid width
+            theme='streamlit',
+            custom_css=custom_css_tab5
+        )
+
+        st.markdown("### Percentage Change Overview")
+        AgGrid(
+            pivot_pct_change,
+            gridOptions=grid_options_tab5_pct_change,
+            enable_enterprise_modules=True,
+            allow_unsafe_jscode=True,  # Allow JavaScript code execution
+            fit_columns_on_grid_load=True,
+            height=150,  # Set grid height for percentage change table
+            width='100%',
+            theme='streamlit',
+            custom_css=custom_css_tab5
+        )
+    except Exception as ex:
+        st.error(f"An error occurred: {ex}")
