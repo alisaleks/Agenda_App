@@ -199,10 +199,10 @@ def filter_hcm_data(data, selected_region, selected_area, selected_shop):
     filtered_data = data.copy()  # Copy data without applying iso_week filter
 
     if selected_region != "All":
-        filtered_data = filtered_data[filtered_data['Region'] == selected_region]
+        filtered_data = filtered_data[filtered_data['REGION'] == selected_region]
 
     if selected_area != "All":
-        filtered_data = filtered_data[filtered_data['Area'] == selected_area]
+        filtered_data = filtered_data[filtered_data['AREA'] == selected_area]
 
     if selected_shop != "All":
         filtered_data = filtered_data[filtered_data['Shop Name'] == selected_shop]
