@@ -110,9 +110,17 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-file_mod_time = os.path.getmtime('shiftslots.xlsx')
+current_date = datetime.now().strftime("%Y-%m-%d")
+yesterday_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-shift_slots = load_excel('shiftslots.xlsx', file_mod_time=file_mod_time)
+today_file_name = f'shiftslots_{current_date}.xlsx'
+yesterday_file_name = f'shiftslots_{yesterday_date}.xlsx'
+
+file_mod_time = os.path.getmtime(today_file_name)
+shift_slots = load_excel(today_file_name, file_mod_time=file_mod_time)
+
+file_mod_time_yesterday = os.path.getmtime(yesterday_file_name)
+shift_slots_yesterday = load_excel(yesterday_file_name, file_mod_time=file_mod_time_yesterday)
 
 file_mod_time1 = os.path.getmtime('hcpshiftslots.xlsx')
 
@@ -301,7 +309,7 @@ hcp_data = filtered_hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceRes
     BlockedHours=('AbsenceDurationHours', 'sum'),
 ).reset_index()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Open Hours / Total Hours", "Blocked Hours Percentage", "MTD/MTG", "HCM vs SF", "Overview"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Open Hours / Total Hours", "Blocked Hours %", "MTD/MTG", "HCM vs SF", "Overview", "Weekly Change Analysis"])
 
 with tab1:        
     # Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
@@ -960,6 +968,206 @@ with tab4:
         weekly_aggregated['BookedHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
             weekly_aggregated['BookedHours'], weekly_aggregated['BookedHours'].shift(1).fillna(0)
         ))
+
+        weekly_aggregated.set_index('iso_week', inplace=True)
+        transposed_weekly_aggregated = weekly_aggregated.T
+        # Step 1: Separate the total figures
+        totals_table = transposed_weekly_aggregated.loc[['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours']]
+
+        # Step 2: Separate the percentage changes
+        percentages_table = transposed_weekly_aggregated.loc[['TotalHours % Change', 'BlockedHours % Change','AvailableHours % Change', 'BookedHours % Change']]
+
+        # Convert iso_week to a string and rename columns to 'Week {iso_week}'
+        totals_table.columns = [f"Week {int(col)}" for col in totals_table.columns.get_level_values(0)]
+        percentages_table.columns = [f"Week {int(col)}" for col in percentages_table.columns.get_level_values(0)]
+
+        # Custom CSS for the table (same as Tab 2, adjusted if needed)
+        custom_css_tab5 = {
+            ".ag-header-cell": {
+                "background-color": "#cc0641 !important",  
+                "color": "white !important",
+                "font-weight": "bold",
+                "padding": "4px"
+            },
+            ".ag-cell": {
+                "padding": "2px",
+                "font-size": "12px"
+            },
+            ".ag-header": {
+                "height": "35px"
+            },
+            ".ag-theme-streamlit .ag-row": {
+                "max-height": "30px"
+            },
+            ".ag-theme-streamlit .ag-root-wrapper": {
+                "border": "2px solid #cc0641",
+                "border-radius": "5px"
+            }
+        }
+        js_code_tab5_pct_change = JsCode("""
+        function(params) {
+            // Get the field name
+            var field = params.colDef.field;
+            
+            // Get the percentage change values for the current data row
+            var blockedHoursPctChange = params.data['BlockedHours % Change'];
+            var pctChangeValue = params.data[field];
+
+            // Specific override for 'BlockedHours % Change'
+            if (field === 'BlockedHours % Change') {
+                if (blockedHoursPctChange <= 0) {
+                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative or zero BlockedHours % Change
+                } else if (blockedHoursPctChange > 0) {
+                    return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive BlockedHours % Change
+                }
+                return null;  // Default styling for zero BlockedHours % Change
+            }
+
+            // Apply general styling for all other percentage change columns
+            if (pctChangeValue >= 0) {
+                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for positive percentage change
+            } else if (pctChangeValue < 0) {
+                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for negative percentage change
+            }
+
+            return null;  // Default styling for zero or undefined percentage change
+        }
+        """)
+
+
+        # Ensure that the pivot tables include the Metric column
+        pivot_total = totals_table.reset_index().rename(columns={'index': 'Metric'})
+        pivot_pct_change = percentages_table.reset_index().rename(columns={'index': 'Metric'})
+
+        # Create column definitions for total hours table
+        columnDefs_tab5_total = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
+        columnDefs_tab5_pct_change = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
+
+        # Add week columns for totals
+        for column in pivot_total.columns[1:]:
+            columnDefs_tab5_total.append({
+                "field": column,
+                "headerName": column,  # Use 'Week {iso_week}' as the header
+                "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) : '0')",
+                "resizable": True,
+                "flex": 1
+            })
+
+        # Add week columns for percentages
+        for column in pivot_pct_change.columns[2:]:
+            columnDefs_tab5_pct_change.append({
+                "field": column,
+                "headerName": column,  # Use 'Week {iso_week}' as the header
+                "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) + ' %' : '0 %')", 
+                "resizable": True,
+                "flex": 1,
+                "cellStyle": js_code_tab5_pct_change  # Apply the specific function for the percentage table
+            })
+
+        # Configure GridOptionsBuilder for both tables
+        gb_tab5_total = GridOptionsBuilder.from_dataframe(pivot_total)
+        gb_tab5_pct_change = GridOptionsBuilder.from_dataframe(pivot_pct_change)
+
+
+        for col in pivot_pct_change.columns:  # For the percentage change table
+            gb_tab5_pct_change.configure_column(col, cellStyle=js_code_tab5_pct_change)
+
+        # Grid options for auto-sizing and responsive layout
+        gb_tab5_total.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+        gb_tab5_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+
+        # Build grid options
+        grid_options_tab5_total = gb_tab5_total.build()
+        grid_options_tab5_pct_change = gb_tab5_pct_change.build()
+
+        # Add custom column definitions to grid options
+        grid_options_tab5_total['columnDefs'] = columnDefs_tab5_total
+        grid_options_tab5_pct_change['columnDefs'] = columnDefs_tab5_pct_change
+
+        # Render both pivot_total and pivot_pct_change tables using AgGrid
+        try:
+            st.markdown("### Total Hours Overview")
+            AgGrid(
+                pivot_total,
+                gridOptions=grid_options_tab5_total,
+                enable_enterprise_modules=True,
+                allow_unsafe_jscode=True,  # Allow JavaScript code execution
+                fit_columns_on_grid_load=True,  # Automatically fit columns on load
+                height=150,  # Set grid height for total table
+                width='100%',  # Set grid width
+                theme='streamlit',
+                custom_css=custom_css_tab5
+            )
+
+            st.markdown("### Percentage Change Overview")
+            AgGrid(
+                pivot_pct_change,
+                gridOptions=grid_options_tab5_pct_change,
+                enable_enterprise_modules=True,
+                allow_unsafe_jscode=True,  # Allow JavaScript code execution
+                fit_columns_on_grid_load=True,
+                height=160,  # Set grid height for percentage change table
+                width='100%',
+                theme='streamlit',
+                custom_css=custom_css_tab5
+            )
+        except Exception as ex:
+            st.error(f"An error occurred: {ex}")
+
+
+ 
+    with tab6:
+        st.markdown("### Weekly Overview")
+
+        metric_options = ['Shift Hours', 'Blocked Hours %', 'Booked Hours %']
+        selected_metric = st.selectbox('Select Metric:', metric_options)
+        metric_map = {
+            'Shift Hours': 'TotalHours',
+            'Blocked Hours %': 'BlockedHoursPercentage',
+            'Booked Hours %': 'SaturationPercentage',
+        }
+
+        # Get the column associated with the selected metric
+        metric_column = metric_map[selected_metric]
+
+
+        # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
+        weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
+            TotalHours=('TotalHours', 'sum'),
+            BlockedHours=('BlockedHours', 'sum'),
+            BookedHours=('BookedHours', 'sum')
+        ).reset_index()
+
+        weekly_aggregated = weekly_aggregated.fillna(0)
+        # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
+        weekly_aggregated_yesterday = weekly_shift_slots_yesterday.groupby('iso_week').agg(
+            TotalHours=('TotalHours', 'sum'),
+            BlockedHours=('BlockedHours', 'sum'),
+            BookedHours=('BookedHours', 'sum')
+        ).reset_index()
+
+        weekly_aggregated_yesterday = weekly_aggregated_yesterday.fillna(0)
+
+        def calculate_percentage_change(today_value, yesterday_value):
+            if yesterday_value == 0:
+                return 0
+            return ((today_value - yesterday_value) / abs(yesterday_value)) * 100
+        # Step 3: Merging today's and yesterday's data on iso_week for comparison
+        comparison_df = pd.merge(weekly_aggregated, weekly_aggregated_yesterday, on='iso_week', suffixes=('_today', '_yesterday'))
+
+        # Step 4: Calculating percentage change for the selected metric
+        comparison_df[f'{metric_column} % Change'] = comparison_df.apply(
+            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_yesterday']),
+            axis=1
+        )
+
+        # Step 5: Select relevant columns for display based on selected metric
+        columns_to_display = [
+            'iso_week', 
+            f'{metric_column}_today', 
+            f'{metric_column}_yesterday', 
+            f'{metric_column} % Change'
+        ]
 
         weekly_aggregated.set_index('iso_week', inplace=True)
         transposed_weekly_aggregated = weekly_aggregated.T
