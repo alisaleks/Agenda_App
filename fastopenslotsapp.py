@@ -1120,67 +1120,88 @@ with tab4:
     with tab6:
         st.markdown("### Weekly Overview")
 
-        metric_options = ['Shift Hours', 'Blocked Hours', 'Booked Hours']
+        metric_options = ['Shift Hours % change', 'Blocked Hours % change', 'Booked Hours % change']
         selected_metric = st.selectbox('Select Metric:', metric_options)
         metric_map = {
-            'Shift Hours': 'TotalHours',
-            'Blocked Hours %': 'BlockedHours',
-            'Booked Hours %': 'BookedHours',
+            'Shift Hours % change': 'TotalHours',
+            'Blocked Hours % change': 'BlockedHours',
+            'Booked Hours % change': 'BookedHours',
         }
 
         # Get the column associated with the selected metric
         metric_column = metric_map[selected_metric]
-
-        # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
-        weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
-            TotalHours=('TotalHours', 'sum'),
-            BlockedHours=('BlockedHours', 'sum'),
-            BookedHours=('BookedHours', 'sum')
-        ).reset_index()
+            # Pivot the table for Tab 4
+        weekly_aggregated = weekly_shift_slots.pivot_table(
+            index='Region',
+            columns='iso_week',
+            values=f'{metric_column}',
+            aggfunc='sum',
+            fill_value=0
+        )
 
         weekly_aggregated = weekly_aggregated.fillna(0)
+        weekly_aggregated = weekly_aggregated.reset_index()
+
         # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
-        weekly_aggregated_yesterday = weekly_shift_slots_yesterday.groupby('iso_week').agg(
-            TotalHours=('TotalHours', 'sum'),
-            BlockedHours=('BlockedHours', 'sum'),
-            BookedHours=('BookedHours', 'sum')
-        ).reset_index()
-        weekly_aggregated_yesterday.head()
+        weekly_aggregated_yesterday = weekly_shift_slots_yesterday.pivot_table(
+            index='Region',
+            columns='iso_week',
+            values=f'{metric_column}',
+            aggfunc='sum',
+            fill_value=0
+        )
         weekly_aggregated_yesterday = weekly_aggregated_yesterday.fillna(0)
-        weekly_aggregated.head()
+        weekly_aggregated_yesterday = weekly_aggregated_yesterday.reset_index()
+
+        # Step 1: Melt the data to convert wide to long format
+        weekly_aggregated_melted = pd.melt(
+            weekly_aggregated, 
+            id_vars=['Region'], 
+            var_name='iso_week', 
+            value_name=f'{metric_column}_today'
+        )
+        weekly_aggregated_yesterday_melted = pd.melt(
+            weekly_aggregated_yesterday, 
+            id_vars=['Region'], 
+            var_name='iso_week', 
+            value_name=f'{metric_column}_yesterday'
+        )
+
+        # Step 2: Merge the two dataframes on Region and iso_week
+        merged_data = pd.merge(
+            weekly_aggregated_melted, 
+            weekly_aggregated_yesterday_melted, 
+            on=['Region', 'iso_week'], 
+            how='inner'
+        )
+
+        merged_grouped = merged_data.groupby(['Region', 'iso_week']).agg(
+            {
+                f'{metric_column}_today': 'sum',  # Sum today's metric values
+                f'{metric_column}_yesterday': 'sum'  # Sum yesterday's metric values
+            }
+        ).reset_index()
+
         def calculate_percentage_change(today_value, yesterday_value):
             if yesterday_value == 0:
                 return 0
             return ((today_value - yesterday_value) / abs(yesterday_value)) * 100
-        # Step 3: Merging today's and yesterday's data on iso_week for comparison
-        comparison_df = pd.merge(weekly_aggregated, weekly_aggregated_yesterday, on='iso_week', suffixes=('_today', '_yesterday'))
-
-        # Calculating percentage change for each metric
-        comparison_df['TotalHours % Change'] = comparison_df.apply(
-            lambda row: calculate_percentage_change(row['TotalHours_today'], row['TotalHours_yesterday']), axis=1
+        
+        # Step 3: Calculate percentage change
+        merged_data['percentage_change'] = merged_data.apply(
+            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_yesterday']), axis=1
         )
 
-        comparison_df['BlockedHours % Change'] = comparison_df.apply(
-            lambda row: calculate_percentage_change(row['BlockedHours_today'], row['BlockedHours_yesterday']), axis=1
-        )
-
-        comparison_df['BookedHours % Change'] = comparison_df.apply(
-            lambda row: calculate_percentage_change(row['BookedHours_today'], row['BookedHours_yesterday']), axis=1
-        )
-
-        comparison_df.head()
-        comparison_df.set_index('iso_week', inplace=True)
-        transposed_weekly_comparison_df = comparison_df.T
-        transposed_weekly_comparison_df.head(10)
-        # Step 1: Separate the total figures
-        totals_table = transposed_weekly_comparison_df.loc[['TotalHours_today', 'BlockedHours_today', 'BookedHours_today']]
-
-        # Step 2: Separate the percentage changes
-        percentages_table = transposed_weekly_comparison_df.loc[['TotalHours % Change', 'BlockedHours % Change','BookedHours % Change']]
-
-        # Convert iso_week to a string and rename columns to 'Week {iso_week}'
-        totals_table.columns = [f"Week {int(col)}" for col in totals_table.columns.get_level_values(0)]
-        percentages_table.columns = [f"Week {int(col)}" for col in percentages_table.columns.get_level_values(0)]
+        # Step 4: Optional sorting or filtering
+        merged_data_sorted = merged_data.sort_values(by=['Region', 'iso_week'])
+        merged_pivot = merged_data_sorted.pivot_table(
+            index='Region',
+            columns='iso_week',
+            values='percentage_change',
+        ).reset_index()
+        merged_pivot.head()
+        # Optional: Rename the columns for better display (e.g., 'Week 36', 'Week 37', etc.)
+        merged_pivot.columns = ['Region'] + [f"Week {int(col)}" for col in merged_pivot.columns[1:]]
 
         # Custom CSS for the table (same as Tab 2, adjusted if needed)
         custom_css_tab6 = {
@@ -1235,27 +1256,9 @@ with tab4:
         }
         """)
 
-
-        # Ensure that the pivot tables include the Metric column
-        pivot_total = totals_table.reset_index().rename(columns={'index': 'Metric'})
-        pivot_pct_change = percentages_table.reset_index().rename(columns={'index': 'Metric'})
-
-        # Create column definitions for total hours table
-        columnDefs_tab6_total = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
-        columnDefs_tab6_pct_change = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
-
-        # Add week columns for totals
-        for column in pivot_total.columns[1:]:
-            columnDefs_tab6_total.append({
-                "field": column,
-                "headerName": column,  # Use 'Week {iso_week}' as the header
-                "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) : '0')",
-                "resizable": True,
-                "flex": 1
-            })
-
-        # Add week columns for percentages
-        for column in pivot_pct_change.columns[2:]:
+        # Create column definitions for percentage change table
+        columnDefs_tab6_pct_change = [{"field": 'Region', "headerName": "Region", "resizable": True, "flex": 1}]
+        for column in merged_pivot.columns[1:]:
             columnDefs_tab6_pct_change.append({
                 "field": column,
                 "headerName": column,  # Use 'Week {iso_week}' as the header
@@ -1265,52 +1268,31 @@ with tab4:
                 "cellStyle": js_code_tab6_pct_change  # Apply the specific function for the percentage table
             })
 
-        # Configure GridOptionsBuilder for both tables
-        gb_tab6_total = GridOptionsBuilder.from_dataframe(pivot_total)
-        gb_tab6_pct_change = GridOptionsBuilder.from_dataframe(pivot_pct_change)
-
-
-        for col in pivot_pct_change.columns:  # For the percentage change table
+        # GridOptionsBuilder for percentage change table
+        gb_tab6_pct_change = GridOptionsBuilder.from_dataframe(merged_pivot)
+        for col in merged_pivot.columns:  # For the percentage change table
             gb_tab6_pct_change.configure_column(col, cellStyle=js_code_tab6_pct_change)
 
         # Grid options for auto-sizing and responsive layout
-        gb_tab6_total.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
         gb_tab6_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
 
         # Build grid options
-        grid_options_tab6_total = gb_tab6_total.build()
         grid_options_tab6_pct_change = gb_tab6_pct_change.build()
 
         # Add custom column definitions to grid options
-        grid_options_tab6_total['columnDefs'] = columnDefs_tab6_total
         grid_options_tab6_pct_change['columnDefs'] = columnDefs_tab6_pct_change
 
-        # Render both pivot_total and pivot_pct_change tables using AgGrid
-        try:
-            st.markdown("### Total Hours Overview")
-            AgGrid(
-                pivot_total,
-                gridOptions=grid_options_tab6_total,
-                enable_enterprise_modules=True,
-                allow_unsafe_jscode=True,  # Allow JavaScript code execution
-                fit_columns_on_grid_load=True,  # Automatically fit columns on load
-                height=150,  # Set grid height for total table
-                width='100%',  # Set grid width
-                theme='streamlit',
-                custom_css=custom_css_tab5
-            )
+        # Render pivot_pct_change table using AgGrid
+        st.markdown(f"### Daily Percentage Change Overview for {selected_metric}")
+        AgGrid(
+            merged_pivot,
+            gridOptions=grid_options_tab6_pct_change,
+            enable_enterprise_modules=True,
+            allow_unsafe_jscode=True,  # Allow JavaScript code execution
+            fit_columns_on_grid_load=True,
+            height=160,  # Set grid height for percentage change table
+            width='100%',
+            theme='streamlit',
+            custom_css=custom_css_tab6
+          )
 
-            st.markdown("### Percentage Change Overview")
-            AgGrid(
-                pivot_pct_change,
-                gridOptions=grid_options_tab6_pct_change,
-                enable_enterprise_modules=True,
-                allow_unsafe_jscode=True,  # Allow JavaScript code execution
-                fit_columns_on_grid_load=True,
-                height=160,  # Set grid height for percentage change table
-                width='100%',
-                theme='streamlit',
-                custom_css=custom_css_tab5
-            )
-        except Exception as ex:
-            st.error(f"An error occurred: {ex}")
