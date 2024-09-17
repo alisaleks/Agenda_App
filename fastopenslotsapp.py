@@ -237,10 +237,9 @@ def filter_hcp_shift_slots(data, selected_region, selected_area, selected_shop):
 filtered_data = filter_data(shift_slots, iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
 filtered_hcp_shift_slots = filter_hcp_shift_slots(hcp_shift_slots, selected_region, selected_area, selected_shop)
 weekly_shift_slots = filter_hcp_shift_slots(shift_slots, selected_region, selected_area, selected_shop)
-
+weekly_shift_slots_yesterday = filter_hcp_shift_slots(shift_slots_yesterday, selected_region, selected_area, selected_shop)
 # Apply the filters to HCM data (without iso_week filter)
 filtered_hcm = filter_hcm_data(hcm, selected_region, selected_area, selected_shop)
-
 # Check if filtered data is empty after applying the filters
 if filtered_data.empty:
     st.warning("No shops found for the selected filter criteria.")
@@ -250,6 +249,8 @@ if filtered_hcp_shift_slots.empty:
 if filtered_hcm.empty:
     st.warning("No shops found for the selected filter criteria.")
 if weekly_shift_slots.empty:
+    st.warning("No shops found for the selected filter criteria.")
+if weekly_shift_slots_yesterday.empty:
     st.warning("No shops found for the selected filter criteria.")
 
 # Filter data for the previous ISO week without applying the current filters (directly from shift_slots)
@@ -1119,17 +1120,16 @@ with tab4:
     with tab6:
         st.markdown("### Weekly Overview")
 
-        metric_options = ['Shift Hours', 'Blocked Hours %', 'Booked Hours %']
+        metric_options = ['Shift Hours', 'Blocked Hours', 'Booked Hours']
         selected_metric = st.selectbox('Select Metric:', metric_options)
         metric_map = {
             'Shift Hours': 'TotalHours',
-            'Blocked Hours %': 'BlockedHoursPercentage',
-            'Booked Hours %': 'SaturationPercentage',
+            'Blocked Hours %': 'BlockedHours',
+            'Booked Hours %': 'BookedHours',
         }
 
         # Get the column associated with the selected metric
         metric_column = metric_map[selected_metric]
-
 
         # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
         weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
@@ -1145,9 +1145,9 @@ with tab4:
             BlockedHours=('BlockedHours', 'sum'),
             BookedHours=('BookedHours', 'sum')
         ).reset_index()
-
+        weekly_aggregated_yesterday.head()
         weekly_aggregated_yesterday = weekly_aggregated_yesterday.fillna(0)
-
+        weekly_aggregated.head()
         def calculate_percentage_change(today_value, yesterday_value):
             if yesterday_value == 0:
                 return 0
@@ -1155,34 +1155,35 @@ with tab4:
         # Step 3: Merging today's and yesterday's data on iso_week for comparison
         comparison_df = pd.merge(weekly_aggregated, weekly_aggregated_yesterday, on='iso_week', suffixes=('_today', '_yesterday'))
 
-        # Step 4: Calculating percentage change for the selected metric
-        comparison_df[f'{metric_column} % Change'] = comparison_df.apply(
-            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_yesterday']),
-            axis=1
+        # Calculating percentage change for each metric
+        comparison_df['TotalHours % Change'] = comparison_df.apply(
+            lambda row: calculate_percentage_change(row['TotalHours_today'], row['TotalHours_yesterday']), axis=1
         )
 
-        # Step 5: Select relevant columns for display based on selected metric
-        columns_to_display = [
-            'iso_week', 
-            f'{metric_column}_today', 
-            f'{metric_column}_yesterday', 
-            f'{metric_column} % Change'
-        ]
+        comparison_df['BlockedHours % Change'] = comparison_df.apply(
+            lambda row: calculate_percentage_change(row['BlockedHours_today'], row['BlockedHours_yesterday']), axis=1
+        )
 
-        weekly_aggregated.set_index('iso_week', inplace=True)
-        transposed_weekly_aggregated = weekly_aggregated.T
+        comparison_df['BookedHours % Change'] = comparison_df.apply(
+            lambda row: calculate_percentage_change(row['BookedHours_today'], row['BookedHours_yesterday']), axis=1
+        )
+
+        comparison_df.head()
+        comparison_df.set_index('iso_week', inplace=True)
+        transposed_weekly_comparison_df = comparison_df.T
+        transposed_weekly_comparison_df.head(10)
         # Step 1: Separate the total figures
-        totals_table = transposed_weekly_aggregated.loc[['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours']]
+        totals_table = transposed_weekly_comparison_df.loc[['TotalHours_today', 'BlockedHours_today', 'BookedHours_today']]
 
         # Step 2: Separate the percentage changes
-        percentages_table = transposed_weekly_aggregated.loc[['TotalHours % Change', 'BlockedHours % Change','AvailableHours % Change', 'BookedHours % Change']]
+        percentages_table = transposed_weekly_comparison_df.loc[['TotalHours % Change', 'BlockedHours % Change','BookedHours % Change']]
 
         # Convert iso_week to a string and rename columns to 'Week {iso_week}'
         totals_table.columns = [f"Week {int(col)}" for col in totals_table.columns.get_level_values(0)]
         percentages_table.columns = [f"Week {int(col)}" for col in percentages_table.columns.get_level_values(0)]
 
         # Custom CSS for the table (same as Tab 2, adjusted if needed)
-        custom_css_tab5 = {
+        custom_css_tab6 = {
             ".ag-header-cell": {
                 "background-color": "#cc0641 !important",  
                 "color": "white !important",
@@ -1204,7 +1205,7 @@ with tab4:
                 "border-radius": "5px"
             }
         }
-        js_code_tab5_pct_change = JsCode("""
+        js_code_tab6_pct_change = JsCode("""
         function(params) {
             // Get the field name
             var field = params.colDef.field;
@@ -1240,12 +1241,12 @@ with tab4:
         pivot_pct_change = percentages_table.reset_index().rename(columns={'index': 'Metric'})
 
         # Create column definitions for total hours table
-        columnDefs_tab5_total = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
-        columnDefs_tab5_pct_change = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
+        columnDefs_tab6_total = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
+        columnDefs_tab6_pct_change = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
 
         # Add week columns for totals
         for column in pivot_total.columns[1:]:
-            columnDefs_tab5_total.append({
+            columnDefs_tab6_total.append({
                 "field": column,
                 "headerName": column,  # Use 'Week {iso_week}' as the header
                 "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) : '0')",
@@ -1255,41 +1256,41 @@ with tab4:
 
         # Add week columns for percentages
         for column in pivot_pct_change.columns[2:]:
-            columnDefs_tab5_pct_change.append({
+            columnDefs_tab6_pct_change.append({
                 "field": column,
                 "headerName": column,  # Use 'Week {iso_week}' as the header
                 "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) + ' %' : '0 %')", 
                 "resizable": True,
                 "flex": 1,
-                "cellStyle": js_code_tab5_pct_change  # Apply the specific function for the percentage table
+                "cellStyle": js_code_tab6_pct_change  # Apply the specific function for the percentage table
             })
 
         # Configure GridOptionsBuilder for both tables
-        gb_tab5_total = GridOptionsBuilder.from_dataframe(pivot_total)
-        gb_tab5_pct_change = GridOptionsBuilder.from_dataframe(pivot_pct_change)
+        gb_tab6_total = GridOptionsBuilder.from_dataframe(pivot_total)
+        gb_tab6_pct_change = GridOptionsBuilder.from_dataframe(pivot_pct_change)
 
 
         for col in pivot_pct_change.columns:  # For the percentage change table
-            gb_tab5_pct_change.configure_column(col, cellStyle=js_code_tab5_pct_change)
+            gb_tab6_pct_change.configure_column(col, cellStyle=js_code_tab6_pct_change)
 
         # Grid options for auto-sizing and responsive layout
-        gb_tab5_total.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
-        gb_tab5_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+        gb_tab6_total.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+        gb_tab6_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
 
         # Build grid options
-        grid_options_tab5_total = gb_tab5_total.build()
-        grid_options_tab5_pct_change = gb_tab5_pct_change.build()
+        grid_options_tab6_total = gb_tab6_total.build()
+        grid_options_tab6_pct_change = gb_tab6_pct_change.build()
 
         # Add custom column definitions to grid options
-        grid_options_tab5_total['columnDefs'] = columnDefs_tab5_total
-        grid_options_tab5_pct_change['columnDefs'] = columnDefs_tab5_pct_change
+        grid_options_tab6_total['columnDefs'] = columnDefs_tab6_total
+        grid_options_tab6_pct_change['columnDefs'] = columnDefs_tab6_pct_change
 
         # Render both pivot_total and pivot_pct_change tables using AgGrid
         try:
             st.markdown("### Total Hours Overview")
             AgGrid(
                 pivot_total,
-                gridOptions=grid_options_tab5_total,
+                gridOptions=grid_options_tab6_total,
                 enable_enterprise_modules=True,
                 allow_unsafe_jscode=True,  # Allow JavaScript code execution
                 fit_columns_on_grid_load=True,  # Automatically fit columns on load
@@ -1302,7 +1303,7 @@ with tab4:
             st.markdown("### Percentage Change Overview")
             AgGrid(
                 pivot_pct_change,
-                gridOptions=grid_options_tab5_pct_change,
+                gridOptions=grid_options_tab6_pct_change,
                 enable_enterprise_modules=True,
                 allow_unsafe_jscode=True,  # Allow JavaScript code execution
                 fit_columns_on_grid_load=True,
