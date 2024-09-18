@@ -929,7 +929,7 @@ with tab4:
             total_row_tab4[col] = df_tab4[col].sum()
 
     # Convert total_row to DataFrame
-    total_df_tab4 = pd.DataFrame(total_row, index=[0])
+    total_df_tab4 = pd.DataFrame(total_row_tab4, index=[0])
     df_tab4_with_totals = pd.concat([df_tab4, total_df_tab4], ignore_index=True)
 
     # Configure GridOptionsBuilder with JavaScript code
@@ -958,59 +958,6 @@ with tab4:
         width='100%',
         theme='streamlit',
         custom_css=custom_css  # Apply custom CSS
-    )
-
-    
-
-    # Iterate over the numeric columns to compute totals
-    for col in numeric_columns_in_pivot:
-        total_row[col] = df[col].sum()
-
-    # Convert total_row to DataFrame
-    total_df = pd.DataFrame(total_row, index=[0])
-
-    df_with_totals = pd.concat([df, total_df], ignore_index=True)
-
-    # Configure GridOptionsBuilder with JavaScript code
-    gb = GridOptionsBuilder.from_dataframe(df_with_totals)
-
-    for column in df.columns[1:]:
-        if 'OpenHours' in column:
-            gb.configure_column(column, cellStyle=js_code)
-
-    # Allow columns to fill the width and use autoHeight for rows
-    gb.configure_grid_options(domLayout= 'normal', autoSizeColumns='allColumns', enableFillHandle=True)
-
-    # Build grid options
-    grid_options = gb.build()
-
-    # Set the columnDefs in the grid_options dictionary
-    grid_options['columnDefs'] = columnDefs
-
-    # Render the AG-Grid in Streamlit with full width
-    try:
-        AgGrid(
-            df_with_totals,
-            gridOptions=grid_options,
-            enable_enterprise_modules=True,
-            allow_unsafe_jscode=True,  # Allow JavaScript code execution
-            fit_columns_on_grid_load=True,  # Automatically fit columns on load
-            height=1000,  # Set grid height to 500 pixels
-            width='100%',  # Set grid width to 100% of the available space
-            theme='streamlit',
-            custom_css=custom_css   
-        )
-    except Exception as ex:
-        st.error(f"An error occurred: {ex}")
-
-with tab2:
-    # Adjust the pivot table to use BlockedHoursPercentage
-    pivot_table_tab2 = aggregated_data.pivot_table(
-        index=['Shop[Name]'],
-        columns=['date', 'weekday'],
-        values='BlockedHoursPercentage',
-        aggfunc='mean',
-        fill_value=0
     )
 
     with tab5:
