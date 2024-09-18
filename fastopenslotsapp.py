@@ -115,6 +115,8 @@ start_date = datetime(2024, 9, 2)
 end_date = datetime(2024, 10, 6)
 start_iso_year, start_iso_week, _ = start_date.isocalendar()
 end_iso_year, end_iso_week, _ = end_date.isocalendar()
+current_iso_year, current_iso_week, _ = datetime.now().isocalendar()
+
 
 current_date = datetime.now().strftime("%Y-%m-%d")
 yesterday_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -135,9 +137,17 @@ hcp_shift_slots = load_excel('hcpshiftslots.xlsx', file_mod_time=file_mod_time1)
 file_mod_time2 = os.path.getmtime('hcm_sf_merged.xlsx')
 
 hcm = load_excel('hcm_sf_merged.xlsx', file_mod_time=file_mod_time2)
+# Assuming `shift_slots['iso_week']` is a list of ISO weeks
+available_weeks = sorted(shift_slots['iso_week'].unique())
+
+# Find the index of the current ISO week in the list
+if current_iso_week in available_weeks:
+    current_week_index = available_weeks.index(current_iso_week)
+else:
+    current_week_index = 0  # Fallback to the first week if current week is not available
 
 # Sidebar filters (all converted to single-selection using selectbox)
-iso_week_filter = st.sidebar.selectbox('Select ISO Week', sorted(shift_slots['iso_week'].unique()))
+iso_week_filter = st.sidebar.selectbox('Select ISO Week', available_weeks, index=current_week_index)
 
 # Calculate the previous ISO week and year based on the selected ISO week
 selected_iso_year = datetime.now().year  # Assuming current year, adjust if you have a different dataset
@@ -939,11 +949,11 @@ with tab4:
     total_row_tab4 = {
         'Shop_Name': 'Total'
     }
-
-     # Only sum columns that actually exist in the DataFrame
+    # Only sum columns that actually exist in the DataFrame and apply comma formatting to totals
     for col in numeric_columns_in_pivot_tab4:
         if col in df_tab4.columns:  # Check if column exists before summing
-            total_row_tab4[col] = df_tab4[col].sum()
+            # Round the totals to 0 decimal places and format with commas
+            total_row_tab4[col] = f"{int(df_tab4[col].sum().round(0)):,}"
 
     # Convert total_row to DataFrame
     total_df_tab4 = pd.DataFrame(total_row_tab4, index=[0])
