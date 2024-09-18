@@ -111,6 +111,11 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+start_date = datetime(2024, 9, 2) 
+end_date = datetime(2024, 10, 6)
+start_iso_year, start_iso_week, _ = start_date.isocalendar()
+end_iso_year, end_iso_week, _ = end_date.isocalendar()
+
 current_date = datetime.now().strftime("%Y-%m-%d")
 yesterday_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -818,7 +823,9 @@ with tab4:
     # Flatten the columns for display
     pivot_table_tab4.columns = [f"Week {col[1]} {col[0]}" for col in pivot_table_tab4.columns.to_flat_index()]
     pivot_table_tab4_reset = pivot_table_tab4.reset_index()
-
+    # Format all numeric columns to one decimal point
+    numeric_columns_in_pivot_tab4 = pivot_table_tab4_reset.select_dtypes(include=['float64', 'int64']).columns
+    pivot_table_tab4_reset[numeric_columns_in_pivot_tab4] = pivot_table_tab4_reset[numeric_columns_in_pivot_tab4].round(1)
     # Create the DataFrame for AgGrid
     df_tab4 = pivot_table_tab4_reset
 
@@ -851,6 +858,11 @@ with tab4:
             "font-weight": "bold",
             "padding": "4px"
         },
+        ".ag-header-group-cell": {  # Style for merged/group headers
+            "background-color": "#cc0641 !important",
+            "color": "white !important",
+            "font-weight": "bold",
+        },
         ".ag-cell": {
             "padding": "2px",
             "font-size": "12px"
@@ -876,7 +888,7 @@ with tab4:
     ]
 
     # Append dynamic column definitions for each week's SF, HCM, Delta (apply color coding based on Delta value)
-    for week in range(35, 41):  # Example for weeks 35 to 40
+    for week in range(start_iso_week, end_iso_week):  # Example for weeks 35 to 40
         columnDefs.append({
             "headerName": f"Week {week}",
             "children": [
@@ -907,11 +919,23 @@ with tab4:
             ]
         })
 
-    # Configure GridOptionsBuilder with JavaScript code and custom styling
-    gb_tab4 = GridOptionsBuilder.from_dataframe(df_tab4)
+    # Calculate totals for numeric columns
+    total_row_tab4 = {
+        'Shop[Name]': 'Total'
+    }
+     # Only sum columns that actually exist in the DataFrame
+    for col in numeric_columns_in_pivot_tab4:
+        if col in df_tab4.columns:  # Check if column exists before summing
+            total_row_tab4[col] = df_tab4[col].sum()
 
+    # Convert total_row to DataFrame
+    total_df_tab4 = pd.DataFrame(total_row, index=[0])
+    df_tab4_with_totals = pd.concat([df_tab4, total_df_tab4], ignore_index=True)
+
+    # Configure GridOptionsBuilder with JavaScript code
+    gb_tab4 = GridOptionsBuilder.from_dataframe(df_tab4_with_totals)
     # Add individual column configurations for conditional formatting
-    for column in df_tab4.columns[1:]:
+    for column in df_tab4[1:]:
         gb_tab4.configure_column(field=column, cellStyle=js_code)
 
     # Configure grid options (same as Tab 1)
@@ -925,7 +949,7 @@ with tab4:
 
     # Render the AG-Grid in Streamlit with full width and custom styling
     AgGrid(
-        df_tab4,
+        df_tab4_with_totals,
         gridOptions=grid_options_tab4,
         enable_enterprise_modules=True,
         allow_unsafe_jscode=True,
@@ -934,6 +958,59 @@ with tab4:
         width='100%',
         theme='streamlit',
         custom_css=custom_css  # Apply custom CSS
+    )
+
+    
+
+    # Iterate over the numeric columns to compute totals
+    for col in numeric_columns_in_pivot:
+        total_row[col] = df[col].sum()
+
+    # Convert total_row to DataFrame
+    total_df = pd.DataFrame(total_row, index=[0])
+
+    df_with_totals = pd.concat([df, total_df], ignore_index=True)
+
+    # Configure GridOptionsBuilder with JavaScript code
+    gb = GridOptionsBuilder.from_dataframe(df_with_totals)
+
+    for column in df.columns[1:]:
+        if 'OpenHours' in column:
+            gb.configure_column(column, cellStyle=js_code)
+
+    # Allow columns to fill the width and use autoHeight for rows
+    gb.configure_grid_options(domLayout= 'normal', autoSizeColumns='allColumns', enableFillHandle=True)
+
+    # Build grid options
+    grid_options = gb.build()
+
+    # Set the columnDefs in the grid_options dictionary
+    grid_options['columnDefs'] = columnDefs
+
+    # Render the AG-Grid in Streamlit with full width
+    try:
+        AgGrid(
+            df_with_totals,
+            gridOptions=grid_options,
+            enable_enterprise_modules=True,
+            allow_unsafe_jscode=True,  # Allow JavaScript code execution
+            fit_columns_on_grid_load=True,  # Automatically fit columns on load
+            height=1000,  # Set grid height to 500 pixels
+            width='100%',  # Set grid width to 100% of the available space
+            theme='streamlit',
+            custom_css=custom_css   
+        )
+    except Exception as ex:
+        st.error(f"An error occurred: {ex}")
+
+with tab2:
+    # Adjust the pivot table to use BlockedHoursPercentage
+    pivot_table_tab2 = aggregated_data.pivot_table(
+        index=['Shop[Name]'],
+        columns=['date', 'weekday'],
+        values='BlockedHoursPercentage',
+        aggfunc='mean',
+        fill_value=0
     )
 
     with tab5:
@@ -1130,7 +1207,7 @@ with tab4:
 
         # Get the column associated with the selected metric
         metric_column = metric_map[selected_metric]
-        start_date_sep = datetime(2024, 9, 1) 
+        start_date_sep = datetime(2024, 9, 2) 
         end_date_sep = datetime(2024, 9, 30)
         weekly_shift_slots.tail()
         weekly_shift_slots = weekly_shift_slots[(weekly_shift_slots['date'] >= start_date_sep) & (weekly_shift_slots['date'] <= end_date_sep)].copy()

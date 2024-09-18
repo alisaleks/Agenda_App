@@ -119,7 +119,7 @@ sfshifts['StartTime'] = pd.to_datetime(sfshifts['Shift[StartTime]'], errors='coe
 sfshifts['EndTime'] = pd.to_datetime(sfshifts['Shift[EndTime]'], errors='coerce')
 sfshifts['StartTime'] = sfshifts['StartTime'].dt.tz_convert(None)
 sfshifts['EndTime'] = sfshifts['EndTime'].dt.tz_convert(None)
-start_date = datetime(2024, 9, 1) 
+start_date = datetime(2024, 9, 2) 
 end_date = datetime(2024, 10, 6)
 shifts_filtered = sfshifts[(sfshifts['StartTime'] >= start_date) & (sfshifts['EndTime']<= end_date)].copy()
 # Rename columns to match
