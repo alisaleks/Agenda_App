@@ -941,9 +941,9 @@ with tab4:
 
         # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
         weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
-            TotalHours=('ShiftDurationHours', 'sum'),
-            BlockedHours=('AbsenceDurationHours', 'sum'),
-            AvailableHours=('ShiftDurationHoursAdjusted', 'sum'),
+            TotalHours=('TotalHours', 'sum'),
+            BlockedHours=('BlockedHours', 'sum'),
+            AvailableHours=('AvailableHours', 'sum'),
             BookedHours=('BookedHours', 'sum')
         ).reset_index()
 
@@ -1205,7 +1205,7 @@ with tab4:
         merged_pivot.head()
         # Optional: Rename the columns for better display (e.g., 'Week 36', 'Week 37', etc.)
         merged_pivot.columns = ['Region'] + [f"Week {int(col)}" for col in merged_pivot.columns[1:]]
-
+        merged_grouped
         # Custom CSS for the table (same as Tab 2, adjusted if needed)
         custom_css_tab6 = {
             ".ag-header-cell": {
@@ -1298,4 +1298,5 @@ with tab4:
             theme='streamlit',
             custom_css=custom_css_tab6
           )
+        
 
