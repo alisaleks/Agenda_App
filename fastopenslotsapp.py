@@ -812,6 +812,7 @@ with tab3:
     )
 
 with tab4:
+    #GT_ServiceResource__r.Name
     # Pivot the table for Tab 4
     pivot_table_tab4 = filtered_hcm.pivot_table(
         index='Shop Name',
@@ -819,35 +820,49 @@ with tab4:
         values=['Duración SF', 'Duración HCM', 'Diferencia de duración'],
         fill_value=0
     )
-
     # Flatten the columns for display
     pivot_table_tab4.columns = [f"Week {col[1]} {col[0]}" for col in pivot_table_tab4.columns.to_flat_index()]
     pivot_table_tab4_reset = pivot_table_tab4.reset_index()
+    pivot_table_tab4_reset.columns = [col.replace(' ', '_') for col in pivot_table_tab4_reset.columns]
+
     # Format all numeric columns to one decimal point
     numeric_columns_in_pivot_tab4 = pivot_table_tab4_reset.select_dtypes(include=['float64', 'int64']).columns
     pivot_table_tab4_reset[numeric_columns_in_pivot_tab4] = pivot_table_tab4_reset[numeric_columns_in_pivot_tab4].round(1)
     # Create the DataFrame for AgGrid
     df_tab4 = pivot_table_tab4_reset
-
-    # Ensure no spaces in field names in df, replacing spaces with underscores or removing them
-    df_tab4.columns = [col.replace(' ', '_') for col in df_tab4.columns]
-
-    # Updated JavaScript code to apply color based on Delta value
     js_code = JsCode("""
-    function(params) {
-        var deltaField = params.colDef.field.replace('Duración_SF', 'Diferencia_de_duración')
-                                             .replace('Duración_HCM', 'Diferencia_de_duración');
+        function(params) {
+            // Check if the current row is the totals row by comparing the 'Shop_Name' field
+            if (params.data['Shop_Name'] === 'Total') {
+                // Apply bold text to the entire totals row and style based on value
+                var totalValue = params.value;
+                var styles = {'fontWeight': 'bold'};  // Make text bold
+                
+                if (totalValue === 0) {
+                    styles['backgroundColor'] = '#95cd41';  // Green for 0
+                    styles['color'] = 'white';
+                } else if (totalValue > -3 && totalValue < 3) {
+                    styles['backgroundColor'] = '#f1b84b';  // Orange for between -3 and 3
+                    styles['color'] = 'black';
+                } else {
+                    styles['backgroundColor'] = '#cc0641';  // Red for outside of -3 and 3
+                    styles['color'] = 'white';
+                }
+                return styles;  // Return styles object
+            }
 
-        var deltaValue = params.data[deltaField];
-
-        if (deltaValue === 0) {
-            return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for Delta = 0
-        } else if (deltaValue > -3 && deltaValue < 3) {
-            return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for Delta between -3 and 3
-        } else {
-            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for Delta < -3 or > 3
+            // Default behavior for non-total rows
+            var deltaField = params.colDef.field.replace('Duración_SF', 'Diferencia_de_duración')
+                                                .replace('Duración_HCM', 'Diferencia_de_duración');
+            var deltaValue = params.data[deltaField];
+            if (deltaValue === 0) {
+                return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for Delta = 0
+            } else if (deltaValue > -3 && deltaValue < 3) {
+                return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for Delta between -3 and 3
+            } else {
+                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for Delta < -3 or > 3
+            }
         }
-    }
     """)
 
     # Custom CSS for styling the grid, including Week X headers
@@ -888,7 +903,7 @@ with tab4:
     ]
 
     # Append dynamic column definitions for each week's SF, HCM, Delta (apply color coding based on Delta value)
-    for week in range(start_iso_week, end_iso_week):  # Example for weeks 35 to 40
+    for week in range(start_iso_week, end_iso_week):
         columnDefs.append({
             "headerName": f"Week {week}",
             "children": [
@@ -898,7 +913,7 @@ with tab4:
                     "valueFormatter": "x.toFixed(1)",
                     "resizable": True,
                     "flex": 1,
-                    "cellStyle": js_code  # Apply color coding based on Delta
+                    "cellStyle": js_code  # Apply the same color coding to totals row
                 },
                 {
                     "field": f"Week_{week}_Duración_HCM",
@@ -906,7 +921,7 @@ with tab4:
                     "valueFormatter": "x.toFixed(1)",
                     "resizable": True,
                     "flex": 1,
-                    "cellStyle": js_code  # Apply color coding based on Delta
+                    "cellStyle": js_code  # Apply the same color coding to totals row
                 },
                 {
                     "field": f"Week_{week}_Diferencia_de_duración",
@@ -914,15 +929,17 @@ with tab4:
                     "valueFormatter": "x.toFixed(1)",
                     "resizable": True,
                     "flex": 1,
-                    "cellStyle": js_code  # Apply color coding based on Delta
+                    "cellStyle": js_code  # Apply the same color coding to totals row
                 }
             ]
         })
 
+
     # Calculate totals for numeric columns
     total_row_tab4 = {
-        'Shop[Name]': 'Total'
+        'Shop_Name': 'Total'
     }
+
      # Only sum columns that actually exist in the DataFrame
     for col in numeric_columns_in_pivot_tab4:
         if col in df_tab4.columns:  # Check if column exists before summing
@@ -930,7 +947,7 @@ with tab4:
 
     # Convert total_row to DataFrame
     total_df_tab4 = pd.DataFrame(total_row_tab4, index=[0])
-    df_tab4_with_totals = pd.concat([df_tab4, total_df_tab4], ignore_index=True)
+    df_tab4_with_totals = pd.concat([total_df_tab4, df_tab4], ignore_index=True)  
 
     # Configure GridOptionsBuilder with JavaScript code
     gb_tab4 = GridOptionsBuilder.from_dataframe(df_tab4_with_totals)
