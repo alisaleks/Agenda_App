@@ -1257,9 +1257,9 @@ with tab4:
                     return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
                 } else {
                     // Color coding for Total Hours % Change (reverse logic)
-                    if (value >= 0) {
+                    if (value < 0) {
                         return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive TotalHours % Change
-                    } else if (value < 0) {
+                    } else if (value >= 0) {
                         return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative TotalHours % Change
                     }
                     return null;  // Default styling for other values
