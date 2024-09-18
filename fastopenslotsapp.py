@@ -1,6 +1,7 @@
 import sys
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 import pytz
 from datetime import datetime, timedelta
 from st_aggrid import GridOptionsBuilder, AgGrid, JsCode
@@ -1205,7 +1206,7 @@ with tab4:
         merged_pivot.head()
         # Optional: Rename the columns for better display (e.g., 'Week 36', 'Week 37', etc.)
         merged_pivot.columns = ['Region'] + [f"Week {int(col)}" for col in merged_pivot.columns[1:]]
-        merged_grouped
+        
         # Custom CSS for the table (same as Tab 2, adjusted if needed)
         custom_css_tab6 = {
             ".ag-header-cell": {
@@ -1229,35 +1230,42 @@ with tab4:
                 "border-radius": "5px"
             }
         }
-        js_code_tab6_pct_change = JsCode("""
-        function(params) {
-            // Get the field name
-            var field = params.colDef.field;
-            
-            // Get the percentage change values for the current data row
-            var blockedHoursPctChange = params.data['BlockedHours % Change'];
-            var pctChangeValue = params.data[field];
+        if selected_metric == 'Blocked Hours % change':
+            color_coding_js = JsCode("""
+            function(params) {
+                var value = params.value;
 
-            // Specific override for 'BlockedHours % Change'
-            if (field === 'BlockedHours % Change') {
-                if (blockedHoursPctChange <= 0) {
-                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative or zero BlockedHours % Change
-                } else if (blockedHoursPctChange > 0) {
-                    return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive BlockedHours % Change
+                if (params.data['Region'] === 'Total') {
+                    return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
+                } else {
+                    // Color coding for Blocked Hours % Change
+                    if (value <= 0) {
+                        return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative or zero BlockedHours % Change
+                    } else if (value > 0) {
+                        return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive BlockedHours % Change
+                    }
+                    return null;  // Default styling for other values
                 }
-                return null;  // Default styling for zero BlockedHours % Change
             }
+            """)
+        elif selected_metric == 'Shift Hours % change':
+            color_coding_js = JsCode("""
+            function(params) {
+                var value = params.value;
 
-            // Apply general styling for all other percentage change columns
-            if (pctChangeValue >= 0) {
-                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for positive percentage change
-            } else if (pctChangeValue < 0) {
-                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for negative percentage change
+                if (params.data['Region'] === 'Total') {
+                    return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
+                } else {
+                    // Color coding for Total Hours % Change (reverse logic)
+                    if (value >= 0) {
+                        return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive TotalHours % Change
+                    } else if (value < 0) {
+                        return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative TotalHours % Change
+                    }
+                    return null;  // Default styling for other values
+                }
             }
-
-            return null;  // Default styling for zero or undefined percentage change
-        }
-        """)
+            """)
 
         # Create column definitions for percentage change table
         columnDefs_tab6_pct_change = [{"field": 'Region', "headerName": "Region", "resizable": True, "flex": 1}]
@@ -1268,13 +1276,13 @@ with tab4:
                 "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) + ' %' : '0 %')", 
                 "resizable": True,
                 "flex": 1,
-                "cellStyle": js_code_tab6_pct_change  # Apply the specific function for the percentage table
+                "cellStyle": color_coding_js  # Apply the specific function for the percentage table
             })
 
         # GridOptionsBuilder for percentage change table
         gb_tab6_pct_change = GridOptionsBuilder.from_dataframe(merged_pivot)
         for col in merged_pivot.columns:  # For the percentage change table
-            gb_tab6_pct_change.configure_column(col, cellStyle=js_code_tab6_pct_change)
+            gb_tab6_pct_change.configure_column(col, cellStyle=color_coding_js)
 
         # Grid options for auto-sizing and responsive layout
         gb_tab6_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
@@ -1286,7 +1294,8 @@ with tab4:
         grid_options_tab6_pct_change['columnDefs'] = columnDefs_tab6_pct_change
 
         # Render pivot_pct_change table using AgGrid
-        st.markdown(f"### Daily Percentage Change Overview for {selected_metric}")
+        st.markdown(f"### Percentage Change from the Beginning of the Month to Today for {selected_metric}")
+
         AgGrid(
             merged_pivot,
             gridOptions=grid_options_tab6_pct_change,
@@ -1298,5 +1307,51 @@ with tab4:
             theme='streamlit',
             custom_css=custom_css_tab6
           )
-        
+
+        # Aggregate totals for each iso_week across all regions
+        merged_grouped_total = merged_grouped.groupby('iso_week').agg(
+            {f'{metric_column}_today': 'sum', f'{metric_column}_yesterday': 'sum'}
+        ).reset_index()
+
+        # Format numbers with commas and round them to integers
+        merged_grouped_total[f'{metric_column}_today'] = merged_grouped_total[f'{metric_column}_today'].round(0).apply(lambda x: f"{int(x):,}")
+        merged_grouped_total[f'{metric_column}_yesterday'] = merged_grouped_total[f'{metric_column}_yesterday'].round(0).apply(lambda x: f"{int(x):,}")
+
+        # Create an interactive bar chart using Plotly
+        fig = go.Figure()
+
+        # Add bars for 'today' values
+        fig.add_trace(go.Bar(
+            x=merged_grouped_total['iso_week'],
+            y=merged_grouped_total[f'{metric_column}_today'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
+            name='Today',
+            marker_color='#cc0641',  # Use the custom color
+            text=merged_grouped_total[f'{metric_column}_today'],  # Show the formatted values
+            textposition='auto'
+        ))
+
+        # Add bars for 'yesterday' values with a lighter shade of the custom color
+        fig.add_trace(go.Bar(
+            x=merged_grouped_total['iso_week'],
+            y=merged_grouped_total[f'{metric_column}_yesterday'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
+            name='Sep 6',
+            marker_color='#f1b84b',  # Lighter shade of the custom color
+            text=merged_grouped_total[f'{metric_column}_yesterday'],  # Show the formatted values
+            textposition='auto'
+        ))
+
+        # Customize layout
+        fig.update_layout(
+            title=f'Comparison of {metric_column} for Today vs Sep 6 (Aggregated Across Regions)',
+            xaxis=dict(title='ISO Week'),
+            yaxis=dict(title=f'{metric_column}'),
+            barmode='group',  # Group the bars for today and yesterday side-by-side
+            bargap=0.2,  # Set gap between bars
+            bargroupgap=0.1,  # Set gap between groups
+            legend_title="Metric",
+            font=dict(size=12),  # Adjust font size for better readability
+        )
+
+        # Render the plot in Streamlit
+        st.plotly_chart(fig)
 
