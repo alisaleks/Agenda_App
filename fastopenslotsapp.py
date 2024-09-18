@@ -1185,17 +1185,37 @@ with tab4:
                 f'{metric_column}_yesterday': 'sum'  # Sum yesterday's metric values
             }
         ).reset_index()
+        weekly_totals = merged_grouped.groupby('iso_week').agg(
+            {f'{metric_column}_today': 'sum', f'{metric_column}_yesterday': 'sum'}
+        ).reset_index()
+
+        # Step 3: Calculate monthly totals (sum over all weeks)
+        monthly_total_today = weekly_totals[f'{metric_column}_today'].sum()
+        monthly_total_yesterday = weekly_totals[f'{metric_column}_yesterday'].sum()
+
+        # Step 7: Add the month column for each region based on the aggregated data
+        region_month_totals = merged_grouped.groupby('Region').agg(
+            {f'{metric_column}_today': 'sum', f'{metric_column}_yesterday': 'sum'}
+        ).reset_index()
 
         def calculate_percentage_change(today_value, yesterday_value):
             if yesterday_value == 0:
                 return 0
             return ((today_value - yesterday_value) / abs(yesterday_value)) * 100
         
+        # Step 2: Calculate percentage change for each week based on the total values
+        weekly_totals['total_percentage_change'] = weekly_totals.apply(
+            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_yesterday']), axis=1
+        )
         # Step 3: Calculate percentage change
         merged_data['percentage_change'] = merged_data.apply(
             lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_yesterday']), axis=1
         )
-
+        monthly_percentage_change = calculate_percentage_change(monthly_total_today, monthly_total_yesterday)
+        # Calculate percentage change for the month for each region
+        region_month_totals['month_percentage_change'] = region_month_totals.apply(
+            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_yesterday']), axis=1
+        )
         # Step 4: Optional sorting or filtering
         merged_data_sorted = merged_data.sort_values(by=['Region', 'iso_week'])
         merged_pivot = merged_data_sorted.pivot_table(
@@ -1203,7 +1223,21 @@ with tab4:
             columns='iso_week',
             values='percentage_change',
         ).reset_index()
-        merged_pivot.head()
+
+        # Append the 'Month Total' column to the pivot table for each region
+        merged_pivot['Month Total'] = merged_pivot['Region'].map(
+            dict(zip(region_month_totals['Region'], region_month_totals['month_percentage_change']))
+        )
+
+        # Fill NaN values for the 'Total' row in the 'Month Total' column
+        merged_pivot['Month Total'].fillna(monthly_percentage_change, inplace=True)
+        # Step 5: Append the total row to the pivot table
+        total_row = pd.DataFrame(
+            [['Total'] + weekly_totals['total_percentage_change'].tolist() + [monthly_percentage_change]], 
+            columns=merged_pivot.columns.tolist() + ['Month Total']
+        )
+        merged_pivot = pd.concat([merged_pivot, total_row], ignore_index=True)
+
         # Optional: Rename the columns for better display (e.g., 'Week 36', 'Week 37', etc.)
         merged_pivot.columns = ['Region'] + [f"Week {int(col)}" for col in merged_pivot.columns[1:]]
         
@@ -1302,7 +1336,7 @@ with tab4:
             enable_enterprise_modules=True,
             allow_unsafe_jscode=True,  # Allow JavaScript code execution
             fit_columns_on_grid_load=True,
-            height=160,  # Set grid height for percentage change table
+            height=180,  # Set grid height for percentage change table
             width='100%',
             theme='streamlit',
             custom_css=custom_css_tab6
