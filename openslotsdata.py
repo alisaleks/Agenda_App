@@ -608,7 +608,8 @@ shift_slots['OverlapHours'] = (shift_slots['TotalOverlappingAbsenceSlots']* 5) /
 shift_slots['TotalSlots'] = shift_slots['ShiftDurationMinutesAdjusted'] / 5
 shift_slots['TotalHours'] = shift_slots['ShiftDurationHours'].fillna(0)
 shift_slots['BlockedHours'] = shift_slots['AbsenceDurationHours'].fillna(0)-shift_slots['OverlapHours'].fillna(0)
-shift_slots['ShiftDurationHoursAdjusted']= shift_slots['TotalHours'] - shift_slots['BlockedHours'] 
+shift_slots['BlockedHours'] = shift_slots['BlockedHours'].apply(lambda x: max(x, 0))
+shift_slots['AvailableHours']= shift_slots['TotalHours'] - shift_slots['BlockedHours'] 
 
 shift_slots['BlockedHoursPercentage'] = (shift_slots['BlockedHours'] / shift_slots['TotalHours']) * 100
 shift_slots.head(10)
@@ -653,10 +654,11 @@ shift_slots['ShiftDurationHours'] = shift_slots['ShiftDurationHours'].fillna(0)
 shift_slots['ShiftDurationMinutesAdjusted'] = shift_slots['ShiftDurationMinutesAdjusted'].fillna(0)
 shift_slots['ShiftDurationHoursAdjusted'] = shift_slots['ShiftDurationHoursAdjusted'].fillna(0)
 shift_slots['AbsenceDurationHours'] = shift_slots['AbsenceDurationHours'].fillna(0)
-shift_slots['BlockedHours'] = shift_slots['AbsenceDurationHours'].fillna(0)-shift_slots['OverlapHours'].fillna(0)
-shift_slots['BlockedHoursPercentage'] = shift_slots['BlockedHoursPercentage'].fillna(0)
 shift_slots['TotalSlots'] = shift_slots['TotalSlots'].fillna(0)
 shift_slots['TotalHours'] = shift_slots['TotalHours'].fillna(0)
+shift_slots['BlockedHours'] = shift_slots['AbsenceDurationHours'].fillna(0)-shift_slots['OverlapHours'].fillna(0)
+shift_slots['BlockedHoursPercentage'] = shift_slots['BlockedHoursPercentage'].fillna(0)
+shift_slots['AvailableHours'] = shift_slots['AvailableHours'].fillna(0)
 
 # Test shop 'C07' to check final output
 a = shift_slots[shift_slots['GT_ShopCode__c'] == '017']

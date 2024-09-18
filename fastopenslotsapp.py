@@ -114,7 +114,7 @@ current_date = datetime.now().strftime("%Y-%m-%d")
 yesterday_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 today_file_name = f'shiftslots_{current_date}.xlsx'
-yesterday_file_name = f'shiftslots_{yesterday_date}.xlsx'
+yesterday_file_name = 'shiftslots_sep1.xlsx'
 
 file_mod_time = os.path.getmtime(today_file_name)
 shift_slots = load_excel(today_file_name, file_mod_time=file_mod_time)
@@ -1120,16 +1120,19 @@ with tab4:
     with tab6:
         st.markdown("### Weekly Overview")
 
-        metric_options = ['Shift Hours % change', 'Blocked Hours % change', 'Booked Hours % change']
+        metric_options = ['Shift Hours % change', 'Blocked Hours % change']
         selected_metric = st.selectbox('Select Metric:', metric_options)
         metric_map = {
             'Shift Hours % change': 'TotalHours',
             'Blocked Hours % change': 'BlockedHours',
-            'Booked Hours % change': 'BookedHours',
         }
 
         # Get the column associated with the selected metric
         metric_column = metric_map[selected_metric]
+        start_date_sep = datetime(2024, 9, 1) 
+        end_date_sep = datetime(2024, 9, 30)
+        weekly_shift_slots.tail()
+        weekly_shift_slots = weekly_shift_slots[(weekly_shift_slots['date'] >= start_date_sep) & (weekly_shift_slots['date'] <= end_date_sep)].copy()
             # Pivot the table for Tab 4
         weekly_aggregated = weekly_shift_slots.pivot_table(
             index='Region',
