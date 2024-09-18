@@ -1234,12 +1234,12 @@ with tab4:
         # Step 5: Append the total row to the pivot table
         total_row = pd.DataFrame(
             [['Total'] + weekly_totals['total_percentage_change'].tolist() + [monthly_percentage_change]], 
-            columns=merged_pivot.columns.tolist() + ['Month Total']
+            columns=merged_pivot.columns.tolist()  
         )
         merged_pivot = pd.concat([merged_pivot, total_row], ignore_index=True)
 
         # Optional: Rename the columns for better display (e.g., 'Week 36', 'Week 37', etc.)
-        merged_pivot.columns = ['Region'] + [f"Week {int(col)}" for col in merged_pivot.columns[1:]]
+        merged_pivot.columns = ['Region'] + [f"Week {int(col)}" if col != 'Month Total' else col for col in merged_pivot.columns[1:]]
         
         # Custom CSS for the table (same as Tab 2, adjusted if needed)
         custom_css_tab6 = {
