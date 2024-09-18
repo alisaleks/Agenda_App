@@ -149,8 +149,10 @@ region_mapping = region_mapping[region_mapping['SYM'] != 'N']
 
 sfshifts['StartTime'] = pd.to_datetime(sfshifts['Shift[StartTime]'], errors='coerce')
 sfshifts['EndTime'] = pd.to_datetime(sfshifts['Shift[EndTime]'], errors='coerce')
-start_date = datetime(2024, 9, 1) 
+start_date = datetime(2024, 9, 2) 
 end_date = datetime(2024, 10, 6)
+start_iso_year, start_iso_week, _ = start_date.isocalendar()
+end_iso_year, end_iso_week, _ = end_date.isocalendar()
 shifts_filtered = sfshifts[(sfshifts['StartTime'] >= start_date) & (sfshifts['EndTime'] <= end_date)].copy()
 # Rename columns to match
 shifts_filtered.rename(columns={
@@ -755,29 +757,12 @@ HCMdata = pd.read_csv(hcm_file, engine='python', dtype=hcm_columns_to_string, us
     'Calendar[ISO Week]', 'Calendar[ISO Year]', '[Audiologist_FTE]'
 ])
 
-def get_previous_weeks_range(n=2, future_weeks=3):
-    today = datetime.today()
-    current_iso_year, current_iso_week, _ = today.isocalendar()
-    
-    # Calculate the start ISO week based on the range (n weeks back)
-    start_iso_week = max(1, current_iso_week - n)
-    
-    # Calculate the future date (end week) by adding `future_weeks` to the current date
-    future_date = today + timedelta(weeks=future_weeks)
-    end_iso_year, end_iso_week, _ = future_date.isocalendar()
-    
-    return start_iso_week, end_iso_week, current_iso_year, end_iso_year
-
-# Example usage
-start_iso_week, end_iso_week, current_iso_year, end_iso_year = get_previous_weeks_range()
-print(f"Start ISO week: {start_iso_week}, End ISO week: {end_iso_week}, Current ISO year: {current_iso_year}, End ISO year: {end_iso_year}")
 
 # Filter HCMdata between start_iso_week and end_iso_week without considering the year
 HCMdata = HCMdata[
     (HCMdata['Calendar[ISO Week]'] >= start_iso_week) &
     (HCMdata['Calendar[ISO Week]'] <= end_iso_week)
 ]
-
 
 # Create composite keys
 HCMdata['ShopCode_3char'] = HCMdata['Shop[Shop Code - Descr]'].str[:3]
