@@ -1157,7 +1157,7 @@ with tab4:
                 enable_enterprise_modules=True,
                 allow_unsafe_jscode=True,  # Allow JavaScript code execution
                 fit_columns_on_grid_load=True,
-                height=160,  # Set grid height for percentage change table
+                height=185,  # Set grid height for percentage change table
                 width='100%',
                 theme='streamlit',
                 custom_css=custom_css_tab5
@@ -1181,7 +1181,7 @@ with tab4:
         fig = px.line(
             weekly_aggregated, 
             x='iso_week',  
-            y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours'],
+            y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours', 'OpenHours'],
             labels={'iso_week': 'ISO Week', 'value': 'Hours'},  
             title="Weekly Hours Overview",
             markers=True  
@@ -1411,7 +1411,7 @@ with tab4:
         grid_options_tab6_pct_change['columnDefs'] = columnDefs_tab6_pct_change
 
         # Render pivot_pct_change table using AgGrid
-        st.markdown(f"### Percentage Change from the Beginning of the Month to Today for {selected_metric}")
+        st.markdown(f"### {selected_metric}: Today vs Sep 6")
 
         AgGrid(
             merged_pivot,
