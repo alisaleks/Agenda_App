@@ -159,7 +159,7 @@ shifts_filtered.rename(columns={
     'Shop[GT_ShopCode__c]': 'GT_ShopCode__c',
     'Service Resource[Name]': 'GT_ServiceResource__r.Name'
 }, inplace=True)
-print(shifts_filtered[shifts_filtered['GT_ShopCode__c'] == '978'])
+print(shifts_filtered[shifts_filtered['GT_ShopCode__c'] == '81C'])
 
 resources.rename(columns={
     'Shop[GT_ShopCode__c]': 'GT_ShopCode__c'
@@ -192,9 +192,8 @@ shifts_filtered['Key'] = shifts_filtered['GT_ShopCode__c'] + '_' + shifts_filter
 duplicates = shifts_filtered[shifts_filtered.duplicated(subset=['Key'], keep=False)]
 shifts_filtered = shifts_filtered.sort_values(by=['Key', 'LastModifiedDate'], ascending=[True, False])
 shifts_filtered = shifts_filtered.drop_duplicates(subset=['Key'], keep='first')
-
 shifts_filtered['ShiftDurationHours'] = (shifts_filtered['EndTime'] - shifts_filtered['StartTime']).dt.total_seconds() / 3600
-
+shifts_filtered[(shifts_filtered['GT_ShopCode__c'] == '81C') & (shifts_filtered['date'] == '18/09/2024')].head(100)
 shifts_filtered['ShopResourceKey'] = shifts_filtered['GT_ShopCode__c'] + shifts_filtered['Shift[ServiceResourceId]']
 resources['ShopResourceKey'] = resources['GT_ShopCode__c'] + resources['Service Territory Member[ServiceResourceId]']
 
@@ -301,18 +300,19 @@ def expand_multiday_absences(row):
 # Filter absences to include any absence overlapping with the period
 expanded_absences = absences_filtered.apply(expand_multiday_absences, axis=1)
 expanded_absences = pd.DataFrame([record for sublist in expanded_absences for record in sublist])
+expanded_absences.head()
 # Group expanded absences by PersonalNumberKey and AbsenceDate
-absences_grouped = expanded_absences.groupby(['PersonalNumberKey', 'AbsenceDate']).agg({
+absences_grouped = expanded_absences.groupby(['PersonalNumberKey', 'AbsenceDate','AbsenceNumber']).agg({
     'AbsenceDurationHours': 'sum',  # Sum of absence duration hours
     'Resource.GT_PersonalNumber__c': 'first', 
     'Resource.RelatedRecord.GT_StoreCode__c': 'first',  
     'Service Resource[Id]':'first',
-    'AbsenceNumber': 'first',  
     'Resource.Name': 'first',  
     'AbsenceStartTime': 'first',
     'AbsenceEndTime': 'last'
 }).reset_index()
-absences_grouped[absences_grouped['Resource.RelatedRecord.GT_StoreCode__c'] == 'A71']
+absences_grouped[(absences_grouped['Resource.GT_PersonalNumber__c'] == '25521')].head(25)
+
 # Group shifts by PersonalNumberKey and ShiftDate to find total shift hours per day per resource
 shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate']).agg({
     'ShiftDurationHours': 'sum',  # Sum of absence duration hours
@@ -338,14 +338,9 @@ shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate']).agg
     
 }).reset_index()
 
-check= shifts_filtered[shifts_filtered['PersonalNumberKey'] == '969_25367']
-columns_to_display = ['GT_ServiceResource__r.Name', 'StartTime', 'ShiftDate', 'iso_week', 'iso_year', 
-                      'StartDateHour',  'ShiftDurationHours', 'Service Resource[IsActive]', 'Active']
+check= shifts_grouped[shifts_grouped['PersonalNumberKey'] == '81C_25521']
+check
 
-check_filtered = check[columns_to_display]
-
-# Display the filtered DataFrame
-check_filtered
 # Merge expanded_absences with shifts data to calculate adjusted shift hours
 sfshifts_merged = pd.merge(
     shifts_grouped,
@@ -355,6 +350,36 @@ sfshifts_merged = pd.merge(
     right_on=['PersonalNumberKey','AbsenceDate'],
     suffixes=('', '_absence')
 )
+sfshifts_merged.columns
+
+# Step 1: Group by 'PersonalNumberKey' and 'ShiftDate' to sum AbsenceDurationHours and retain important fields
+sfshifts_merged = sfshifts_merged.groupby(
+    ['PersonalNumberKey', 'ShiftDate'],
+    as_index=False
+).agg({
+    'ShiftDurationHours': 'first',  # Retain the original shift hours
+    'AbsenceDurationHours': 'sum',  # Sum the absence duration
+    'Service Resource[GT_Role__c]': 'first',  # Keep the first occurrence of the role
+    'GT_ShopCode__c': 'first',
+    'Shift[Label]': 'first',
+    'ShopResourceKey': 'first',
+    'StartDateHour': 'first',
+    'iso_year': 'first',
+    'iso_week': 'first',
+    'date': 'first',
+    'LastModifiedDate': 'first',
+    'Shop[Name]': 'first',
+    'Shop[GT_CountryCode__c]': 'first',
+    'Shop[Country]': 'first',
+    'Shop[GT_AreaManagerCode__c]': 'first',
+    'Shop[GT_AreaCode__c]': 'first',
+    'Shop[GT_StoreType__c]': 'first',
+    'StartTime': 'first',  
+    'EndTime': 'last', 
+    'Service Resource[Id]': 'first', 
+    'Resource.Name': 'first',
+    'GT_ServiceResource__r.Name': 'first'
+})
 # Adjust AbsenceDurationHours if ShiftDurationHours is greater
 sfshifts_merged['AbsenceDurationHours'] = sfshifts_merged.apply(
     lambda row: row['ShiftDurationHours'] if row['ShiftDurationHours'] < row['AbsenceDurationHours'] else row['AbsenceDurationHours'],
@@ -369,14 +394,12 @@ sfshifts_merged['ShiftDurationHoursAdjusted'] = sfshifts_merged['ShiftDurationHo
 sfshifts_merged['ShiftDurationMinutesAdjusted'] = sfshifts_merged['ShiftDurationHoursAdjusted'] * 60
 sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate'])
 
-check = sfshifts_merged[(sfshifts_merged['PersonalNumberKey'] == '017_11108') & (pd.to_datetime(sfshifts_merged['ShiftDate'], errors='coerce') == '2024-09-02')]
-columns_to_display = ['ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']
-
+check = sfshifts_merged[(sfshifts_merged['GT_ShopCode__c'] == '81C') & (pd.to_datetime(sfshifts_merged['ShiftDate'], errors='coerce') == '2024-09-18')]
+columns_to_display = ['ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted','ShiftDate', 'Shift[Label]', 'Shop[Name]', 'Resource.Name', 'StartTime', 'EndTime']
+sfshifts_merged.columns
 # Filter the DataFrame and select only the required columns
 check_filtered = check[columns_to_display]
 check_filtered
-
-
 # Identify duplicates based on the specified subset of columns
 duplicate_mask = appointments.duplicated(subset=[
     'Shop[GT_CountryCode__c]',
@@ -508,6 +531,9 @@ expanded_absences_df['PersonalidKey'] = expanded_absences_df['GT_ShopCode__c'] +
 
 # Step 1: Merge shift slots and appointment slots based on PersonalidKey, date, and Slot
 # The goal here is to ensure only appointments that match an active shift are kept.
+all_slots_df['Slot'] = pd.to_datetime(all_slots_df['Slot'])
+expanded_shifts_df['ShiftSlot'] = pd.to_datetime(expanded_shifts_df['ShiftSlot'])
+
 appointments_with_shifts = pd.merge(
     all_slots_df,
     expanded_shifts_df[['ShopResourceKey', 'ShiftSlot']],
@@ -516,32 +542,17 @@ appointments_with_shifts = pd.merge(
     right_on=['ShopResourceKey', 'ShiftSlot']
 )
 
-appointments_with_shifts
+duplicates = appointments_with_shifts[appointments_with_shifts.duplicated(subset=['ShopResourceKey', 'ShiftSlot'], keep=False)]
+duplicates.head(20)
+# Drop duplicates based on 'ShopResourceKey' and 'ShiftSlot' columns
+appointments_with_shifts = appointments_with_shifts.drop_duplicates(subset=['ShopResourceKey', 'ShiftSlot'], keep='first')
 
-target_date = pd.to_datetime('2024-09-02')
-
-# For simplicity, let's assume '001_0Hn6700000001OXCAY' is the PersonalidKey for both shifts and absences
-personal_key = '94B0Hn6700000001PBCAY'
-
-# Filter appointments, shifts, and absences for '001_0Hn6700000001OXCAY' and '2024-09-06'
+target_date = pd.to_datetime('2024-09-20')
+personal_key = '1850Hn670000008WNrCAM'
 appointments_example = all_slots_df[
     (all_slots_df['PersonalidKey'] == personal_key) & 
     (all_slots_df['date'] == target_date)
 ]
-
-
-
-absences_example = expanded_absences_df[
-    (expanded_absences_df['PersonalidKey'] == personal_key) & 
-    (expanded_absences_df['AbsenceSlot'].dt.date == target_date.date())
-]
-
-# Display a few rows of the filtered datasets to understand the data for this specific PersonalidKey and date
-print(appointments_example.head(20))
-print(absences_example.head(20))
-
-# Let's also ensure that absence does not block the appointment slot.
-
 # Step 3: Merge with absence slots to check for overlaps
 appointments_with_shifts_and_absences = pd.merge(
     appointments_with_shifts,
@@ -551,14 +562,11 @@ appointments_with_shifts_and_absences = pd.merge(
     right_on=['PersonalidKey', 'AbsenceSlot']
 )
 # Step 4: Prioritize appointments over absences
-# If there is an overlap between an appointment and an absence, we prioritize the appointment by removing the absence overlap.
-appointments_with_shifts_and_absences.columns
-
 appointments_with_shifts_and_absences['IsAbsence'] = appointments_with_shifts_and_absences['AbsenceSlot'].notnull()
 appointments_with_shifts_and_absences['IsAppointment'] = appointments_with_shifts_and_absences['Slot'].notnull()
 # expanded_absences_df already contains all absences, so we'll use it directly
 all_absence_slots = expanded_absences_df.copy()
-
+appointments_with_shifts_and_absences
 # Merge absence slots with appointment slots to identify overlaps
 overlapping_absence_slots = pd.merge(
     expanded_absences_df[['PersonalidKey', 'AbsenceSlot']],
@@ -567,7 +575,14 @@ overlapping_absence_slots = pd.merge(
     right_on=['PersonalidKey', 'Slot'],
     how='inner'
 )
-
+overlapping_absence_slots.columns
+appointments_with_shifts_and_absences[(appointments_with_shifts_and_absences['GT_ShopCode__c'] == '25018')].tail()
+target_date = pd.to_datetime('2024-09-23')
+absences_example = overlapping_absence_slots[
+    (overlapping_absence_slots['PersonalidKey'] == '0100Hn67000000PNF9CAO') & 
+    (overlapping_absence_slots['AbsenceSlot'].dt.date == target_date.date())
+]
+absences_example.tail(20)
 # Only keep the necessary columns
 overlapping_absence_slots = overlapping_absence_slots[['PersonalidKey', 'AbsenceSlot']]
 # Add GT_ShopCode__c and AbsenceSlot date to the overlapping absence slots for grouping
@@ -580,6 +595,10 @@ overlapping_absence_slots = pd.merge(
 
 # Convert AbsenceSlot to date for grouping purposes
 overlapping_absence_slots['AbsenceSlotDate'] = overlapping_absence_slots['AbsenceSlot'].dt.date
+overlapping_duplicates = overlapping_absence_slots[overlapping_absence_slots.duplicated(subset=['PersonalidKey', 'AbsenceSlot'], keep=False)]
+overlapping_duplicates.head(20)
+# Drop duplicates based on 'ShopResourceKey' and 'ShiftSlot' columns
+overlapping_absence_slots = overlapping_absence_slots.drop_duplicates(subset=['PersonalidKey', 'AbsenceSlot'], keep='first')
 
 # Group by shop, service resource, and date to calculate the total overlapping absence slots
 total_overlapping_absence_slots = overlapping_absence_slots.groupby(
@@ -588,7 +607,7 @@ total_overlapping_absence_slots = overlapping_absence_slots.groupby(
 
 # Rename the AbsenceSlotDate to 'date' to align with other datasets
 total_overlapping_absence_slots.rename(columns={'AbsenceSlotDate': 'date'}, inplace=True)
-
+total_overlapping_absence_slots[total_overlapping_absence_slots['GT_ShopCode__c'] == '010']
 # Step 2: Count the unique slots, ensuring no double-counting for overlaps
 net_booked_slots = appointments_with_shifts_and_absences.groupby(['GT_ShopCode__c', 'Service Resource[Name]', 'date', 'Slot']).size().reset_index(name='Count')
 
@@ -607,12 +626,12 @@ shift_slots['date'] = pd.to_datetime(shift_slots['date'], format='%d/%m/%Y', err
 shift_slots = pd.merge(shift_slots, total_overlapping_absence_slots, on=['GT_ShopCode__c', 'date'], how='left')
 shift_slots['TotalOverlappingAbsenceSlots'] = shift_slots['TotalOverlappingAbsenceSlots'].fillna(0)
 shift_slots['OverlapHours'] = (shift_slots['TotalOverlappingAbsenceSlots']* 5) / 60
-shift_slots['TotalSlots'] = shift_slots['ShiftDurationMinutesAdjusted'] / 5
+shift_slots['TotalSlots_net'] = shift_slots['ShiftDurationMinutesAdjusted'] / 5
+shift_slots['TotalSlots_net_gross'] = (shift_slots['ShiftDurationHours']*60) / 5
 shift_slots['TotalHours'] = shift_slots['ShiftDurationHours'].fillna(0)
 shift_slots['BlockedHours'] = shift_slots['AbsenceDurationHours'].fillna(0)-shift_slots['OverlapHours'].fillna(0)
 shift_slots['BlockedHours'] = shift_slots['BlockedHours'].apply(lambda x: max(x, 0))
 shift_slots['AvailableHours']= shift_slots['TotalHours'] - shift_slots['BlockedHours'] 
-
 shift_slots['BlockedHoursPercentage'] = (shift_slots['BlockedHours'] / shift_slots['TotalHours']) * 100
 shift_slots.head(10)
 # Step 1: Generate all dates within the specified range
@@ -656,7 +675,7 @@ shift_slots['ShiftDurationHours'] = shift_slots['ShiftDurationHours'].fillna(0)
 shift_slots['ShiftDurationMinutesAdjusted'] = shift_slots['ShiftDurationMinutesAdjusted'].fillna(0)
 shift_slots['ShiftDurationHoursAdjusted'] = shift_slots['ShiftDurationHoursAdjusted'].fillna(0)
 shift_slots['AbsenceDurationHours'] = shift_slots['AbsenceDurationHours'].fillna(0)
-shift_slots['TotalSlots'] = shift_slots['TotalSlots'].fillna(0)
+shift_slots['TotalSlots_net_net'] = shift_slots['TotalSlots_net_net'].fillna(0)
 shift_slots['TotalHours'] = shift_slots['TotalHours'].fillna(0)
 shift_slots['BlockedHours'] = shift_slots['AbsenceDurationHours'].fillna(0)-shift_slots['OverlapHours'].fillna(0)
 shift_slots['BlockedHoursPercentage'] = shift_slots['BlockedHoursPercentage'].fillna(0)
@@ -678,7 +697,7 @@ shift_slots = pd.merge(
 shift_slots['TotalBookedSlots'] = shift_slots['Count'].fillna(0)
 shift_slots.drop(columns=['Count'], inplace=True)
 
-shift_slots['OpenSlots'] = shift_slots['TotalSlots'] - shift_slots['TotalBookedSlots']
+shift_slots['OpenSlots'] = shift_slots['TotalSlots_gross'] - shift_slots['TotalBookedSlots']
 shift_slots['OpenSlots'] = shift_slots['OpenSlots'].apply(lambda x: max(x, 0))
 
 # Step 6: Additional Calculations
