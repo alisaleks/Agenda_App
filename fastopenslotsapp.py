@@ -1067,7 +1067,6 @@ with tab4:
             var blockedHoursPctChange = params.data['BlockedHours % Change'];
             var pctChangeValue = params.data[field];
 
-            // Specific override for 'BlockedHours % Change'
             if (field === 'BlockedHours % Change') {
                 if (blockedHoursPctChange <= 0) {
                     return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative or zero BlockedHours % Change
@@ -1167,6 +1166,54 @@ with tab4:
             )
         except Exception as ex:
             st.error(f"An error occurred: {ex}")
+
+            import plotly.express as px
+            # Create an interactive time series graph with Plotly
+            fig = px.line(
+                weekly_aggregated, 
+                x='iso_week', 
+                y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours'],
+                labels={'iso_week': 'ISO Week', 'value': 'Hours'},
+                title="Weekly Hours Overview",
+                markers=True
+            )
+
+            # Customize the layout for better readability
+            fig.update_layout(
+                xaxis_title="Week Number",
+                yaxis_title="Hours",
+                hovermode="x unified"
+            )
+
+            # Display the plotly graph in Streamlit
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Optional: Add percentage change graph as well
+            st.markdown("### Weekly Percentage Change Overview")
+
+            fig_pct = px.line(
+                weekly_aggregated, 
+                x='iso_week', 
+                y=['TotalHours % Change', 'BlockedHours % Change', 'AvailableHours % Change', 'BookedHours % Change'],
+                labels={'iso_week': 'ISO Week', 'value': '% Change'},
+                title="Weekly Percentage Change Overview",
+                markers=True
+            )
+
+            # Customize the layout for the percentage change graph
+            fig_pct.update_layout(
+                xaxis_title="Week Number",
+                yaxis_title="Percentage Change",
+                hovermode="x unified"
+            )
+
+            # Display the percentage change plot
+            st.plotly_chart(fig_pct, use_container_width=True)
+
+
+
+
+
 
 
     with tab6:
