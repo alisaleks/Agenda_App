@@ -1168,7 +1168,6 @@ with tab4:
             st.error(f"An error occurred: {ex}")
 
 
- 
     with tab6:
         st.markdown("### Weekly Overview")
 
@@ -1440,3 +1439,60 @@ with tab4:
         # Render the plot in Streamlit
         st.plotly_chart(fig)
 
+        # Create an interactive bar chart using Plotly
+        fig = go.Figure()
+
+        # Add bars for 'today' values by week
+        fig.add_trace(go.Bar(
+            x=merged_grouped_total['iso_week'],
+            y=merged_grouped_total[f'{metric_column}_today'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
+            name='Today',
+            marker_color='#cc0641',  # Use the custom color
+            text=merged_grouped_total[f'{metric_column}_today'],  # Show the formatted values
+            textposition='auto'
+        ))
+
+        # Add bars for 'yesterday' values by week
+        fig.add_trace(go.Bar(
+            x=merged_grouped_total['iso_week'],
+            y=merged_grouped_total[f'{metric_column}_yesterday'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
+            name='Sep 6',
+            marker_color='#f1b84b',  # Lighter shade of the custom color
+            text=merged_grouped_total[f'{metric_column}_yesterday'],  # Show the formatted values
+            textposition='auto'
+        ))
+
+        # Add a bar for the monthly total (today)
+        fig.add_trace(go.Bar(
+            x=['Month Total'],  # Category for month total
+            y=[monthly_total_today],  # Monthly total value for today
+            name='Today - Month Total',
+            marker_color='#cc0641',  # Use the custom color
+            text=f"{int(monthly_total_today):,}",  # Show the formatted total
+            textposition='auto'
+        ))
+
+        # Add a bar for the monthly total (yesterday)
+        fig.add_trace(go.Bar(
+            x=['Month Total'],  # Category for month total
+            y=[monthly_total_yesterday],  # Monthly total value for yesterday
+            name='Sep 6 - Month Total',
+            marker_color='#f1b84b',  # Lighter shade of the custom color
+            text=f"{int(monthly_total_yesterday):,}",  # Show the formatted total
+            textposition='auto'
+        ))
+
+        # Customize layout
+        fig.update_layout(
+            title=f'Comparison of {metric_column} for Today vs Sep 6 (Aggregated Across Regions)',
+            xaxis=dict(title='ISO Week / Month'),
+            yaxis=dict(title=f'{metric_column}'),
+            barmode='group',  # Group the bars for today and yesterday side-by-side
+            bargap=0.2,  # Set gap between bars
+            bargroupgap=0.1,  # Set gap between groups
+            legend_title="Metric",
+            font=dict(size=12),  # Adjust font size for better readability
+        )
+
+        # Render the plot in Streamlit
+        st.plotly_chart(fig)
