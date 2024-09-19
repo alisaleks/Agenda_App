@@ -2,6 +2,7 @@ import sys
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 import pytz
 from datetime import datetime, timedelta
 from st_aggrid import GridOptionsBuilder, AgGrid, JsCode
@@ -1166,7 +1167,6 @@ with tab4:
         except Exception as ex:
             st.error(f"An error occurred: {ex}")
         
-        import plotly.express as px
 
         # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
         weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
