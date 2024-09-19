@@ -1091,7 +1091,6 @@ with tab4:
         # Ensure that the pivot tables include the Metric column
         pivot_total = totals_table.reset_index().rename(columns={'index': 'Metric'})
         pivot_pct_change = percentages_table.reset_index().rename(columns={'index': 'Metric'})
-
         # Create column definitions for total hours table
         columnDefs_tab5_total = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
         columnDefs_tab5_pct_change = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
@@ -1166,49 +1165,38 @@ with tab4:
             )
         except Exception as ex:
             st.error(f"An error occurred: {ex}")
+        
+        import plotly.express as px
 
-            import plotly.express as px
-            # Create an interactive time series graph with Plotly
-            fig = px.line(
-                weekly_aggregated, 
-                x='iso_week', 
-                y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours'],
-                labels={'iso_week': 'ISO Week', 'value': 'Hours'},
-                title="Weekly Hours Overview",
-                markers=True
-            )
+        # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
+        weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
+            TotalHours=('TotalHours', 'sum'),
+            BlockedHours=('BlockedHours', 'sum'),
+            AvailableHours=('AvailableHours', 'sum'),
+            BookedHours=('BookedHours', 'sum')
+        ).reset_index()
 
-            # Customize the layout for better readability
-            fig.update_layout(
-                xaxis_title="Week Number",
-                yaxis_title="Hours",
-                hovermode="x unified"
-            )
+        weekly_aggregated = weekly_aggregated.fillna(0)
 
-            # Display the plotly graph in Streamlit
-            st.plotly_chart(fig, use_container_width=True)
+        # Create an interactive time series graph with Plotly
+        fig = px.line(
+            weekly_aggregated, 
+            x='iso_week',  # X-axis will be the week number (iso_week)
+            y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours'],  # Plot the absolute numbers
+            labels={'iso_week': 'ISO Week', 'value': 'Hours'},  # Axis labels
+            title="Weekly Hours Overview",  # Title for the chart
+            markers=True  # Add markers to the lines for better visibility
+        )
 
-            # Optional: Add percentage change graph as well
-            st.markdown("### Weekly Percentage Change Overview")
+        # Customize the layout for better readability
+        fig.update_layout(
+            xaxis_title="Week Number",  # Customize X-axis title
+            yaxis_title="Hours",  # Customize Y-axis title
+            hovermode="x unified"  # Show hover information for all lines at the same point
+        )
 
-            fig_pct = px.line(
-                weekly_aggregated, 
-                x='iso_week', 
-                y=['TotalHours % Change', 'BlockedHours % Change', 'AvailableHours % Change', 'BookedHours % Change'],
-                labels={'iso_week': 'ISO Week', 'value': '% Change'},
-                title="Weekly Percentage Change Overview",
-                markers=True
-            )
-
-            # Customize the layout for the percentage change graph
-            fig_pct.update_layout(
-                xaxis_title="Week Number",
-                yaxis_title="Percentage Change",
-                hovermode="x unified"
-            )
-
-            # Display the percentage change plot
-            st.plotly_chart(fig_pct, use_container_width=True)
+        # Display the plotly graph in Streamlit
+        st.plotly_chart(fig, use_container_width=True)
 
 
 
