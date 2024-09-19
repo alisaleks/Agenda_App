@@ -1273,7 +1273,6 @@ with tab4:
             columns='iso_week',
             values='percentage_change',
         ).reset_index()
-
         # Append the 'Month Total' column to the pivot table for each region
         merged_pivot['Month Total'] = merged_pivot['Region'].map(
             dict(zip(region_month_totals['Region'], region_month_totals['month_percentage_change']))
@@ -1397,88 +1396,36 @@ with tab4:
             {f'{metric_column}_today': 'sum', f'{metric_column}_yesterday': 'sum'}
         ).reset_index()
 
-        # Format numbers with commas and round them to integers
-        merged_grouped_total[f'{metric_column}_today'] = merged_grouped_total[f'{metric_column}_today'].round(0).apply(lambda x: f"{int(x):,}")
-        merged_grouped_total[f'{metric_column}_yesterday'] = merged_grouped_total[f'{metric_column}_yesterday'].round(0).apply(lambda x: f"{int(x):,}")
+       # Create a new row for the monthly total without formatting for calculation purposes
+        monthly_totals_row = pd.DataFrame({
+            'iso_week': ['Month Total'],  # Label for the new row
+            f'{metric_column}_today': [monthly_total_today],  # Monthly total for today
+            f'{metric_column}_yesterday': [monthly_total_yesterday]  # Monthly total for yesterday
+        })
 
-        # Create an interactive bar chart using Plotly
-        fig = go.Figure()
-
-        # Add bars for 'today' values
-        fig.add_trace(go.Bar(
-            x=merged_grouped_total['iso_week'],
-            y=merged_grouped_total[f'{metric_column}_today'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
-            name='Today',
-            marker_color='#cc0641',  # Use the custom color
-            text=merged_grouped_total[f'{metric_column}_today'],  # Show the formatted values
-            textposition='auto'
-        ))
-
-        # Add bars for 'yesterday' values with a lighter shade of the custom color
-        fig.add_trace(go.Bar(
-            x=merged_grouped_total['iso_week'],
-            y=merged_grouped_total[f'{metric_column}_yesterday'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
-            name='Sep 6',
-            marker_color='#f1b84b',  # Lighter shade of the custom color
-            text=merged_grouped_total[f'{metric_column}_yesterday'],  # Show the formatted values
-            textposition='auto'
-        ))
-
-        # Customize layout
-        fig.update_layout(
-            title=f'Comparison of {metric_column} for Today vs Sep 6 (Aggregated Across Regions)',
-            xaxis=dict(title='ISO Week'),
-            yaxis=dict(title=f'{metric_column}'),
-            barmode='group',  # Group the bars for today and yesterday side-by-side
-            bargap=0.2,  # Set gap between bars
-            bargroupgap=0.1,  # Set gap between groups
-            legend_title="Metric",
-            font=dict(size=12),  # Adjust font size for better readability
-        )
-
-        # Render the plot in Streamlit
-        st.plotly_chart(fig)
+        # Append the new row to the merged_grouped_total DataFrame
+        merged_grouped_total_with_month = pd.concat([merged_grouped_total, monthly_totals_row], ignore_index=True)
 
         # Create an interactive bar chart using Plotly
         fig = go.Figure()
 
         # Add bars for 'today' values by week
         fig.add_trace(go.Bar(
-            x=merged_grouped_total['iso_week'],
-            y=merged_grouped_total[f'{metric_column}_today'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
+            x=merged_grouped_total_with_month['iso_week'],
+            y=merged_grouped_total_with_month[f'{metric_column}_today'],  # Use the raw numeric values
             name='Today',
             marker_color='#cc0641',  # Use the custom color
-            text=merged_grouped_total[f'{metric_column}_today'],  # Show the formatted values
+            text=merged_grouped_total_with_month[f'{metric_column}_today'].apply(lambda x: f"{int(x):,}"),  # Show the formatted values for display only
             textposition='auto'
         ))
 
         # Add bars for 'yesterday' values by week
         fig.add_trace(go.Bar(
-            x=merged_grouped_total['iso_week'],
-            y=merged_grouped_total[f'{metric_column}_yesterday'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
+            x=merged_grouped_total_with_month['iso_week'],
+            y=merged_grouped_total_with_month[f'{metric_column}_yesterday'],  # Use the raw numeric values
             name='Sep 6',
             marker_color='#f1b84b',  # Lighter shade of the custom color
-            text=merged_grouped_total[f'{metric_column}_yesterday'],  # Show the formatted values
-            textposition='auto'
-        ))
-
-        # Add a bar for the monthly total (today)
-        fig.add_trace(go.Bar(
-            x=['Month Total'],  # Category for month total
-            y=[monthly_total_today],  # Monthly total value for today
-            name='Today - Month Total',
-            marker_color='#cc0641',  # Use the custom color
-            text=f"{int(monthly_total_today):,}",  # Show the formatted total
-            textposition='auto'
-        ))
-
-        # Add a bar for the monthly total (yesterday)
-        fig.add_trace(go.Bar(
-            x=['Month Total'],  # Category for month total
-            y=[monthly_total_yesterday],  # Monthly total value for yesterday
-            name='Sep 6 - Month Total',
-            marker_color='#f1b84b',  # Lighter shade of the custom color
-            text=f"{int(monthly_total_yesterday):,}",  # Show the formatted total
+            text=merged_grouped_total_with_month[f'{metric_column}_yesterday'].apply(lambda x: f"{int(x):,}"),  # Show the formatted values for display only
             textposition='auto'
         ))
 
@@ -1487,7 +1434,7 @@ with tab4:
             title=f'Comparison of {metric_column} for Today vs Sep 6 (Aggregated Across Regions)',
             xaxis=dict(title='ISO Week / Month'),
             yaxis=dict(title=f'{metric_column}'),
-            barmode='group',  # Group the bars for today and yesterday side-by-side
+            barmode='group',  # Group the bars for today and yesterday side by side
             bargap=0.2,  # Set gap between bars
             bargroupgap=0.1,  # Set gap between groups
             legend_title="Metric",
