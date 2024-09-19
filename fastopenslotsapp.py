@@ -329,7 +329,10 @@ hcp_data = filtered_hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceRes
 
 tab6, tab1, tab2, tab3, tab4, tab5 = st.tabs(["Weekly Change Analysis", "Open Hours / Total Hours", "Blocked Hours %", "Progression", "HCM vs SF", "REX"])
 
-with tab1:        
+with tab1:    
+    st.markdown(''':red[ **Total Hours: Todos los turnos configurados*]''')
+    st.markdown(''':red[ **Open Hours: Turnos abiertos luego de descontar horas bloqueadas y horas de cita*]''')
+
     # Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
     pivot_table = aggregated_data.pivot_table(
         index=['Shop[Name]'],
@@ -488,6 +491,8 @@ with tab1:
         st.error(f"An error occurred: {ex}")
 
 with tab2:
+    st.markdown(''':red[ **Horas bloqueadas que no se superponen con ninguna cita y tienen turnos configurados*]''')
+
     # Adjust the pivot table to use BlockedHoursPercentage
     pivot_table_tab2 = aggregated_data.pivot_table(
         index=['Shop[Name]'],
@@ -827,7 +832,7 @@ with tab4:
     #GT_ServiceResource__r.Name
     # Pivot the table for Tab 4
     pivot_table_tab4 = filtered_hcm.pivot_table(
-        index='Shop Name',
+        index='Resource Name',
         columns='iso_week',
         values=['Duración SF', 'Duración HCM', 'Diferencia de duración'],
         fill_value=0
@@ -845,7 +850,7 @@ with tab4:
     js_code = JsCode("""
         function(params) {
             // Check if the current row is the totals row by comparing the 'Shop_Name' field
-            if (params.data['Shop_Name'] === 'Total') {
+            if (params.data['Resource_Name'] === 'Total') {
                 // Apply bold text to the entire totals row and style based on value
                 var totalValue = params.value;
                 var styles = {'fontWeight': 'bold'};  // Make text bold
@@ -906,8 +911,8 @@ with tab4:
     # Define the column configuration for "Shop Name"
     columnDefs = [
         {
-            "headerName": "Shop Name",
-            "field": "Shop_Name",
+            "headerName": "Resource Name",
+            "field": "Resource_Name",
             "resizable": True,
             "flex": 2,
             "minWidth": 150
@@ -949,7 +954,7 @@ with tab4:
 
     # Calculate totals for numeric columns
     total_row_tab4 = {
-        'Shop_Name': 'Total'
+        'Resource_Name': 'Total'
     }
     # Only sum columns that actually exist in the DataFrame and apply comma formatting to totals
     for col in numeric_columns_in_pivot_tab4:
@@ -1139,19 +1144,6 @@ with tab4:
 
         # Render both pivot_total and pivot_pct_change tables using AgGrid
         try:
-            st.markdown("### Total Hours Overview")
-            AgGrid(
-                pivot_total,
-                gridOptions=grid_options_tab5_total,
-                enable_enterprise_modules=True,
-                allow_unsafe_jscode=True,  # Allow JavaScript code execution
-                fit_columns_on_grid_load=True,  # Automatically fit columns on load
-                height=150,  # Set grid height for total table
-                width='100%',  # Set grid width
-                theme='streamlit',
-                custom_css=custom_css_tab5
-            )
-
             st.markdown("### Percentage Change Overview")
             AgGrid(
                 pivot_pct_change,
@@ -1421,7 +1413,7 @@ with tab4:
             enable_enterprise_modules=True,
             allow_unsafe_jscode=True,  # Allow JavaScript code execution
             fit_columns_on_grid_load=True,
-            height=183,  # Set grid height for percentage change table
+            height=185,  # Set grid height for percentage change table
             width='100%',
             theme='streamlit',
             custom_css=custom_css_tab6
