@@ -446,12 +446,13 @@ with tab1:
 
     # Iterate over the numeric columns to compute totals
     for col in numeric_columns_in_pivot:
-        total_row[col] = df[col].sum()
+        total_row[col] =  f"{int(df[col].sum().round(0)):,}"
+
 
     # Convert total_row to DataFrame
     total_df = pd.DataFrame(total_row, index=[0])
 
-    df_with_totals = pd.concat([df, total_df], ignore_index=True)
+    df_with_totals = pd.concat([total_df, df], ignore_index=True)
 
     # Configure GridOptionsBuilder with JavaScript code
     gb = GridOptionsBuilder.from_dataframe(df_with_totals)
@@ -586,7 +587,7 @@ with tab2:
 
     # Convert total_row to DataFrame and append to the original data
     total_df_tab2 = pd.DataFrame(total_row_tab2, index=[0])
-    df_with_totals_tab2 = pd.concat([df_tab2, total_df_tab2], ignore_index=True)
+    df_with_totals_tab2 = pd.concat([total_df_tab2, df_tab2], ignore_index=True)
 
     # Configure GridOptionsBuilder with JavaScript code
     gb_tab2 = GridOptionsBuilder.from_dataframe(df_with_totals_tab2)
@@ -849,14 +850,14 @@ with tab4:
                 var styles = {'fontWeight': 'bold'};  // Make text bold
                 
                 if (totalValue === 0) {
-                    styles['backgroundColor'] = '#95cd41';  // Green for 0
+                    styles['backgroundColor'] = '#e0e0e0';  // Green for 0
                     styles['color'] = 'white';
                 } else if (totalValue > -3 && totalValue < 3) {
-                    styles['backgroundColor'] = '#f1b84b';  // Orange for between -3 and 3
+                    styles['backgroundColor'] = '#e0e0e0';  // Orange for between -3 and 3
                     styles['color'] = 'black';
                 } else {
-                    styles['backgroundColor'] = '#cc0641';  // Red for outside of -3 and 3
-                    styles['color'] = 'white';
+                    styles['backgroundColor'] = '#e0e0e0';  // Red for outside of -3 and 3
+                    styles['color'] = 'black';
                 }
                 return styles;  // Return styles object
             }
@@ -866,7 +867,7 @@ with tab4:
                                                 .replace('Duración_HCM', 'Diferencia_de_duración');
             var deltaValue = params.data[deltaField];
             if (deltaValue === 0) {
-                return {'backgroundColor': '#95cd41', 'color': 'white'};  // Green for Delta = 0
+                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for Delta = 0
             } else if (deltaValue > -3 && deltaValue < 3) {
                 return {'backgroundColor': '#f1b84b', 'color': 'black'};  // Orange for Delta between -3 and 3
             } else {
@@ -1385,7 +1386,7 @@ with tab4:
             enable_enterprise_modules=True,
             allow_unsafe_jscode=True,  # Allow JavaScript code execution
             fit_columns_on_grid_load=True,
-            height=180,  # Set grid height for percentage change table
+            height=183,  # Set grid height for percentage change table
             width='100%',
             theme='streamlit',
             custom_css=custom_css_tab6
@@ -1396,7 +1397,7 @@ with tab4:
             {f'{metric_column}_today': 'sum', f'{metric_column}_yesterday': 'sum'}
         ).reset_index()
 
-       # Create a new row for the monthly total without formatting for calculation purposes
+        # Create a new row for the monthly total without formatting for calculation purposes
         monthly_totals_row = pd.DataFrame({
             'iso_week': ['Month Total'],  # Label for the new row
             f'{metric_column}_today': [monthly_total_today],  # Monthly total for today
@@ -1404,37 +1405,43 @@ with tab4:
         })
 
         # Append the new row to the merged_grouped_total DataFrame
-        merged_grouped_total_with_month = pd.concat([merged_grouped_total, monthly_totals_row], ignore_index=True)
+        merged_grouped_total = pd.concat([merged_grouped_total, monthly_totals_row], ignore_index=True)
+
+        # Format numbers with commas and round them to integers
+        merged_grouped_total[f'{metric_column}_today'] = merged_grouped_total[f'{metric_column}_today'].round(0).apply(lambda x: f"{int(x):,}")
+        merged_grouped_total[f'{metric_column}_yesterday'] = merged_grouped_total[f'{metric_column}_yesterday'].round(0).apply(lambda x: f"{int(x):,}")
 
         # Create an interactive bar chart using Plotly
         fig = go.Figure()
 
-        # Add bars for 'today' values by week
+        # Add bars for 'today' values
         fig.add_trace(go.Bar(
-            x=merged_grouped_total_with_month['iso_week'],
-            y=merged_grouped_total_with_month[f'{metric_column}_today'],  # Use the raw numeric values
+            x=merged_grouped_total['iso_week'],
+            y=merged_grouped_total[f'{metric_column}_today'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
             name='Today',
             marker_color='#cc0641',  # Use the custom color
-            text=merged_grouped_total_with_month[f'{metric_column}_today'].apply(lambda x: f"{int(x):,}"),  # Show the formatted values for display only
+            text=merged_grouped_total[f'{metric_column}_today'],  # Show the formatted values
             textposition='auto'
         ))
 
-        # Add bars for 'yesterday' values by week
+        # Add bars for 'yesterday' values with a lighter shade of the custom color
         fig.add_trace(go.Bar(
-            x=merged_grouped_total_with_month['iso_week'],
-            y=merged_grouped_total_with_month[f'{metric_column}_yesterday'],  # Use the raw numeric values
+            x=merged_grouped_total['iso_week'],
+            y=merged_grouped_total[f'{metric_column}_yesterday'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
             name='Sep 6',
             marker_color='#f1b84b',  # Lighter shade of the custom color
-            text=merged_grouped_total_with_month[f'{metric_column}_yesterday'].apply(lambda x: f"{int(x):,}"),  # Show the formatted values for display only
+            text=merged_grouped_total[f'{metric_column}_yesterday'],  # Show the formatted values
             textposition='auto'
         ))
 
         # Customize layout
         fig.update_layout(
             title=f'Comparison of {metric_column} for Today vs Sep 6 (Aggregated Across Regions)',
-            xaxis=dict(title='ISO Week / Month'),
+            xaxis=dict(title='ISO Week / Month', type='category',  
+                    categoryorder='array',  # Order the x-axis categories manually
+                    categoryarray=list(merged_grouped_total['iso_week'])),  # Set the correct order: weeks followed by "Month Total"
             yaxis=dict(title=f'{metric_column}'),
-            barmode='group',  # Group the bars for today and yesterday side by side
+            barmode='group',  # Group the bars for today and yesterday side-by-side
             bargap=0.2,  # Set gap between bars
             bargroupgap=0.1,  # Set gap between groups
             legend_title="Metric",
