@@ -298,11 +298,12 @@ month_to_go_data = shift_slots[(shift_slots['date'] >= today) & (shift_slots['da
 open_hours_month_to_go = month_to_go_data['OpenHours'].sum()
 
 
-# Determine the best configured region
+# Determine the best configured region      
+
 best_configured_region = shift_slots.groupby('Region')['SaturationPercentage'].mean().idxmax() if not filtered_data.empty else 'N/A'
-st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for the selected week: {open_hours_this_week:.2f}</div>", unsafe_allow_html=True)
-st.sidebar.markdown(f"<div class='sidebar-stats-box'>Change from last week: {change_from_last_week:.2f}%</div>", unsafe_allow_html=True)
-st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for month to go: {open_hours_month_to_go:.2f}</div>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for the selected week: {open_hours_this_week:,.0f}</div>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Change from last week: {change_from_last_week:,.0f}%</div>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<div class='sidebar-stats-box'>Open hours for month to go: {open_hours_month_to_go:,.0f}</div>", unsafe_allow_html=True)
 st.sidebar.markdown(f"<div class='sidebar-stats-box'>Best configured region: {best_configured_region}</div>", unsafe_allow_html=True)
 # Ensure that only numeric columns are included for aggregation
 numeric_cols = ['OpenHours', 'TotalHours', 'BlockedHoursPercentage']
@@ -330,8 +331,8 @@ hcp_data = filtered_hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceRes
 tab6, tab1, tab2, tab3, tab4, tab5 = st.tabs(["Weekly Change Analysis", "Open Hours / Total Hours", "Blocked Hours %", "Progression", "HCM vs SF", "REX"])
 
 with tab1:    
-    st.markdown(''':red[ **Total Hours: Todos los turnos configurados*]''')
-    st.markdown(''':red[ **Open Hours: Turnos abiertos luego de descontar horas bloqueadas y horas de cita*]''')
+    st.markdown(''':green[ *****Total Hours***: Todos los turnos configurados*]''')
+    st.markdown(''':green[ *****Open Hours***: Turnos abiertos luego de descontar horas bloqueadas y horas de cita*]''')
 
     # Adjust the pivot table to exclude GT_ShopCode__c and SaturationPercentage
     pivot_table = aggregated_data.pivot_table(
@@ -491,7 +492,7 @@ with tab1:
         st.error(f"An error occurred: {ex}")
 
 with tab2:
-    st.markdown(''':red[ **Horas bloqueadas que no se superponen con ninguna cita y tienen turnos configurados*]''')
+    st.markdown(''':green[ **Horas bloqueadas que no se superponen con ninguna cita y tienen turnos configurados*]''')
 
     # Adjust the pivot table to use BlockedHoursPercentage
     pivot_table_tab2 = aggregated_data.pivot_table(
@@ -1003,7 +1004,8 @@ with tab4:
             TotalHours=('TotalHours', 'sum'),
             BlockedHours=('BlockedHours', 'sum'),
             AvailableHours=('AvailableHours', 'sum'),
-            BookedHours=('BookedHours', 'sum')
+            BookedHours=('BookedHours', 'sum'),
+            OpenHours=('OpenHours', 'sum')
         ).reset_index()
 
         weekly_aggregated = weekly_aggregated.fillna(0)
@@ -1029,13 +1031,17 @@ with tab4:
             weekly_aggregated['BookedHours'], weekly_aggregated['BookedHours'].shift(1).fillna(0)
         ))
 
+        weekly_aggregated['OpenHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
+        weekly_aggregated['OpenHours'], weekly_aggregated['OpenHours'].shift(1).fillna(0)
+        ))
+
         weekly_aggregated.set_index('iso_week', inplace=True)
         transposed_weekly_aggregated = weekly_aggregated.T
         # Step 1: Separate the total figures
-        totals_table = transposed_weekly_aggregated.loc[['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours']]
+        totals_table = transposed_weekly_aggregated.loc[['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours', 'OpenHours']]
 
         # Step 2: Separate the percentage changes
-        percentages_table = transposed_weekly_aggregated.loc[['TotalHours % Change', 'BlockedHours % Change','AvailableHours % Change', 'BookedHours % Change']]
+        percentages_table = transposed_weekly_aggregated.loc[['TotalHours % Change', 'BlockedHours % Change','AvailableHours % Change', 'BookedHours % Change', 'OpenHours % Change']]
 
         # Convert iso_week to a string and rename columns to 'Week {iso_week}'
         totals_table.columns = [f"Week {int(col)}" for col in totals_table.columns.get_level_values(0)]
@@ -1165,7 +1171,8 @@ with tab4:
             TotalHours=('TotalHours', 'sum'),
             BlockedHours=('BlockedHours', 'sum'),
             AvailableHours=('AvailableHours', 'sum'),
-            BookedHours=('BookedHours', 'sum')
+            BookedHours=('BookedHours', 'sum'),
+            OpenHours=('OpenHours', 'sum')
         ).reset_index()
 
         weekly_aggregated = weekly_aggregated.fillna(0)
@@ -1173,27 +1180,26 @@ with tab4:
         # Create an interactive time series graph with Plotly
         fig = px.line(
             weekly_aggregated, 
-            x='iso_week',  # X-axis will be the week number (iso_week)
-            y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours'],  # Plot the absolute numbers
-            labels={'iso_week': 'ISO Week', 'value': 'Hours'},  # Axis labels
-            title="Weekly Hours Overview",  # Title for the chart
-            markers=True  # Add markers to the lines for better visibility
+            x='iso_week',  
+            y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours'],
+            labels={'iso_week': 'ISO Week', 'value': 'Hours'},  
+            title="Weekly Hours Overview",
+            markers=True  
         )
 
         # Customize the layout for better readability
         fig.update_layout(
-            xaxis_title="Week Number",  # Customize X-axis title
-            yaxis_title="Hours",  # Customize Y-axis title
-            hovermode="x unified"  # Show hover information for all lines at the same point
+            xaxis_title="Week Number",  
+            yaxis_title="Hours", 
+            hovermode="x unified"  
+        )
+
+        fig.update_traces(
+            hovertemplate='%{y:,.0f} Hours<br>ISO Week: %{x}'
         )
 
         # Display the plotly graph in Streamlit
         st.plotly_chart(fig, use_container_width=True)
-
-
-
-
-
 
 
     with tab6:
