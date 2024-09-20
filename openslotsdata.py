@@ -80,7 +80,8 @@ absences_columns_to_string = {
 'User[GT_StoreCode__c]': str,
 'Resource Absence[AbsenceNumber]': str,
 'Service Resource[Name]': str,
-'Service Resource[Id]':str
+'Service Resource[Id]':str,
+'Resource Absence[Type]': str
 }
 
 # Load datasets with only the necessary columns specified
@@ -128,7 +129,8 @@ absences = load_csv(
     dtype=absences_columns_to_string,
     usecols=[
         'Resource Absence[AbsenceNumber]', 'Resource Absence[Start]', 'Resource Absence[End]', 'Service Resource[Name]', 
-        'Service Resource[GT_PersonalNumber__c]', 'User[GT_StoreCode__c]', 'Service Resource[Id]'
+        'Service Resource[GT_PersonalNumber__c]', 'User[GT_StoreCode__c]', 'Service Resource[Id]','Resource Absence[Type]'
+
     ]
 )
 # Rename columns to match
@@ -138,7 +140,8 @@ absences.rename(columns={
     'Resource Absence[AbsenceNumber]':'AbsenceNumber',
     'Service Resource[Name]': 'Resource.Name',
     'Service Resource[GT_PersonalNumber__c]': 'Resource.GT_PersonalNumber__c', 
-    'User[GT_StoreCode__c]': 'Resource.RelatedRecord.GT_StoreCode__c'
+    'User[GT_StoreCode__c]': 'Resource.RelatedRecord.GT_StoreCode__c',
+    'Resource Absence[Type]': 'Type'
 }, inplace=True)
 
 # Load regionmapping data
@@ -291,7 +294,8 @@ def expand_multiday_absences(row):
             'Resource.GT_PersonalNumber__c': row['Resource.GT_PersonalNumber__c'],
             'Resource.RelatedRecord.GT_StoreCode__c': row['Resource.RelatedRecord.GT_StoreCode__c'],
             'Resource.Name': row['Resource.Name'],
-            'Service Resource[Id]': row['Service Resource[Id]']
+            'Service Resource[Id]': row['Service Resource[Id]'],
+            'Type': row['Type']
         })
         current_date += timedelta(days=1)
     
@@ -307,6 +311,7 @@ absences_grouped = expanded_absences.groupby(['PersonalNumberKey', 'AbsenceDate'
     'AbsenceDurationHours': 'sum',  # Sum of absence duration hours
     'Resource.GT_PersonalNumber__c': 'first', 
     'Resource.RelatedRecord.GT_StoreCode__c': 'first',  
+    'Type': 'first',
     'Service Resource[Id]':'first',
     'Resource.Name': 'first',  
     'AbsenceStartTime': 'first',
@@ -524,6 +529,7 @@ for _, row in absences_grouped.iterrows():
             'AbsenceNumber': row['AbsenceNumber'],
             'Resource.GT_PersonalNumber__c': row['Resource.GT_PersonalNumber__c'], 
             'GT_ShopCode__c':row['Resource.RelatedRecord.GT_StoreCode__c'],
+            'Type': row['Type'],
             'Resource.Name': row['Resource.Name'],
             'Service Resource[Id]': row['Service Resource[Id]']
         })
