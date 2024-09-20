@@ -830,7 +830,15 @@ with tab3:
     )
 
 with tab4:
-    #GT_ServiceResource__r.Name
+    url1 = "https://amplifongroup.service-now.com/esc?id=esc_dashboard"
+    url2 = "https://amplifongroup.service-now.com/sp_amp?id=sc_category_amp&sys_id=9ddfb4d3db96209072ccbb13f3961918"
+    
+    st.markdown(f'''
+    :green[*Esta vista os puede ayudar para identificar rápidamente dónde cada AP tiene horas asignadas dentro de vuestra área, facilitando el control del negocio en caso de movimientos temporales entre tiendas, por ejemplo. Si vosotros o HRBP necesitais abrir un ticket (HR Ops o Suporte) podeis hacerlo a traves de los siguientes enlances:*]
+    - [Abrir Ticket por HR]({url1})
+    - [Abrir Ticket por Soporte]({url2})
+    ''')
+
     # Pivot the table for Tab 4
     pivot_table_tab4 = filtered_hcm.pivot_table(
         index='Resource Name',
@@ -1201,6 +1209,88 @@ with tab4:
         # Display the plotly graph in Streamlit
         st.plotly_chart(fig, use_container_width=True)
 
+        st.markdown("### Tiendas que necesitan atención urgente (Para Hoy)")
+
+        # Get today's date
+        today = datetime.now().date()
+
+        # Convert the 'date' column to datetime
+        weekly_shift_slots['date'] = pd.to_datetime(weekly_shift_slots['date'], format='%Y-%m-%d')
+
+        # Step 1: Filter the dataset to include necessary columns for today
+        filtered_data = weekly_shift_slots[weekly_shift_slots['date'].dt.date == today][['Region', 'Shop[Name]', 'BlockedHoursPercentage']].copy()
+
+        # Sort by region and by highest BlockedHoursPercentage
+        top_shops_by_region = (
+            filtered_data.sort_values(by='BlockedHoursPercentage', ascending=False)
+            .groupby('Region')
+            .head(4)  # Get top 4 shops per region
+        )
+
+        # Get unique regions
+        regions = top_shops_by_region['Region'].unique()
+
+        # Custom CSS for styling the boxes and the shop list
+        st.markdown("""
+            <style>
+            .custom-box {
+                border: 2px solid #cc0641;
+                border-radius: 10px;
+                padding: 15px;
+                margin-bottom: 10px;
+                background-color: #f9f9f9;
+                text-align: center;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            .custom-box h5 {
+                color: #cc0641;
+                font-size: 18px;
+                font-weight: bold;
+                margin-bottom: 10px;
+                text-transform: uppercase;
+            }
+            .shop-list {
+                margin-top: 10px;
+                text-align: left;
+                line-height: 1.6;  /* Increased line height for readability */
+            }
+            .shop-list p {
+                font-size: 14px;
+                margin: 0;
+            }
+            .shop-list strong {
+                color: #333;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Create 4 columns to display 4 regions in one row
+        cols = st.columns(4)
+
+        # Iterate over regions and display them in the respective column
+        for i, region in enumerate(regions):
+            with cols[i % 4]:  # Ensure 4 regions per row
+                # Start the custom box div and shop list inside it
+                top_shops = top_shops_by_region[top_shops_by_region['Region'] == region]
+
+                shop_list = ""
+                for index, row in top_shops.iterrows():
+                    shop_name = row['Shop[Name]']
+                    blocked_pct = row['BlockedHoursPercentage']
+                    
+                    # Append shop details to the list
+                    shop_list += f"<p>- <strong>{shop_name}</strong>: {blocked_pct:,.0f}% Blocked Hours</p>"
+
+                # Render both the header and the shop list inside the box
+                st.markdown(f"""
+                <div class="custom-box">
+                    <h5>{region}</h5>
+                    <div class="shop-list">
+                        {shop_list}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
     with tab6:
         st.markdown("### Weekly Overview")

@@ -706,6 +706,7 @@ shift_slots['BookedHours'] = (shift_slots['TotalBookedSlots'] * 5) / 60
 shift_slots['SaturationPercentage'] = (shift_slots['BookedHours'] / shift_slots['TotalHours']) * 100
 shift_slots['SaturationPercentage'] = shift_slots['SaturationPercentage'].clip(lower=0, upper=100)
 shift_slots['OpenHours'] = shift_slots['TotalHours'] - shift_slots['BookedHours']-shift_slots['BlockedHours']
+shift_slots['OpenHours'] = shift_slots['OpenHours'].apply(lambda x: max(x, 0))
 
 # Add weekday name and ISO week
 shift_slots['date'] = pd.to_datetime(shift_slots['date'], format='%d/%m/%Y')
