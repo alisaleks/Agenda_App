@@ -104,7 +104,7 @@ resources = load_csv(
         'Service Territory Member[EffectiveStartDate]', 'Shop[Country]', 
         'Service Territory Member[ServiceTerritoryId]', 'Shop[GT_ShopCode__c]', 
         'Service Territory Member[ServiceResourceId]', 'Service Resource[GT_PersonalNumber__c]', 'Service Resource[IsActive]',
-        'Service Resource[GT_Role__c]'
+        'Service Resource[GT_Role__c]','Service Resource[Name]'
     ], 
 )
 
@@ -140,6 +140,7 @@ absences.rename(columns={
     'Service Resource[GT_PersonalNumber__c]': 'Resource.GT_PersonalNumber__c', 
     'User[GT_StoreCode__c]': 'Resource.RelatedRecord.GT_StoreCode__c'
 }, inplace=True)
+
 # Load regionmapping data
 region_mapping_path = 'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/regionmapping.xlsx'
 region_mapping = load_excel(region_mapping_path)
@@ -436,6 +437,9 @@ appointments = appointments.drop_duplicates(subset=[
 
 # Filter appointments within August
 appointments_filtered = appointments[(appointments['ApptStartTime'] >= start_date) & (appointments['ApptEndTime'] <= end_date)].copy()
+# First, create a dictionary to map PersonalNumber to Employee Full Name in sfshifts_merged
+resources.rename(columns={'Service Resource[GT_PersonalNumber__c]': 'PersonalNumber'}, inplace=True)
+personal_number_to_name = dict(zip(resources['PersonalNumber'], resources['Service Resource[Name]']))
 
 #Deleting unused DataFrames to free up memory
 del sfshifts, resources, appointments, absences
@@ -697,14 +701,11 @@ shift_slots = pd.merge(
 shift_slots['TotalBookedSlots'] = shift_slots['Count'].fillna(0)
 shift_slots.drop(columns=['Count'], inplace=True)
 
-shift_slots['OpenSlots'] = shift_slots['TotalSlots_gross'] - shift_slots['TotalBookedSlots']
-shift_slots['OpenSlots'] = shift_slots['OpenSlots'].apply(lambda x: max(x, 0))
-
 # Step 6: Additional Calculations
-shift_slots['OpenHours'] = (shift_slots['OpenSlots'] * 5) / 60
 shift_slots['BookedHours'] = (shift_slots['TotalBookedSlots'] * 5) / 60
 shift_slots['SaturationPercentage'] = (shift_slots['BookedHours'] / shift_slots['TotalHours']) * 100
 shift_slots['SaturationPercentage'] = shift_slots['SaturationPercentage'].clip(lower=0, upper=100)
+shift_slots['OpenHours'] = shift_slots['TotalHours'] - shift_slots['BookedHours']-shift_slots['BlockedHours']
 
 # Add weekday name and ISO week
 shift_slots['date'] = pd.to_datetime(shift_slots['date'], format='%d/%m/%Y')
@@ -725,7 +726,7 @@ shift_slots.rename(columns={
 }, inplace=True)
 # Save to Excel
 current_date = datetime.now().strftime("%Y-%m-%d")
-output_file_path = f'shiftslots_{current_date}.xlsx'  # Use f-string to include the date in the filename
+output_file_path = 'shiftslots.xlsx'  # Use f-string to include the date in the filename
 shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')
 
 
@@ -782,19 +783,19 @@ HCMdata = HCMdata[
     (HCMdata['Calendar[ISO Week]'] >= start_iso_week) &
     (HCMdata['Calendar[ISO Week]'] <= end_iso_week)
 ]
-
 # Create composite keys
 HCMdata['ShopCode_3char'] = HCMdata['Shop[Shop Code - Descr]'].str[:3]
 HCMdata['CompositeKey'] = HCMdata['ShopCode_3char'] + '_' + HCMdata['Unique Employee[Employee Person Number]'].astype(str) + '_' + HCMdata['Calendar[ISO Year]'].astype(str) + '_' + HCMdata['Calendar[ISO Week]'].astype(str)
 sfshifts_merged['CompositeKey'] = sfshifts_merged['PersonalNumberKey'] + '_' + sfshifts_merged['iso_year'].astype(str) + '_' + sfshifts_merged['iso_week'].astype(str)
-
+sfshifts_merged.columns
 # Step 2: Group and sum data
 HCMdata_summed = HCMdata.groupby(
     ['CompositeKey', 'Calendar[ISO Year]', 'Calendar[ISO Week]']
 ).agg({
-    '[Audiologist_FTE]': 'sum'
-}).reset_index()
-
+    '[Audiologist_FTE]': 'sum',
+    'Unique Employee[Employee Full Name]': 'first'
+    }).reset_index()
+HCMdata_summed
 # Multiply the '[Audiologist_FTE]' by 40 to get the duration
 HCMdata_summed['Duración HCM'] = HCMdata_summed['[Audiologist_FTE]'] * 40
 # Step 3: Process SF shifts data
@@ -809,13 +810,15 @@ shift_duration_per_week.rename(columns={'ShiftDurationHours': 'Duración SF'}, i
 # Step 4: Merge both datasets (without region/area/shop data yet)
 all_composite_keys = pd.merge(
     shift_duration_per_week[['CompositeKey', 'Duración SF']],  # From SF shifts
-    HCMdata_summed[['CompositeKey', 'Duración HCM']],  # From HCM data
+    HCMdata_summed[['CompositeKey', 'Duración HCM',  'Unique Employee[Employee Full Name]']],  # From HCM data
     on='CompositeKey', how='outer'
 )
-
+all_composite_keys
 # Step 5: Add region, area, and shop (DESCR) mapping data based on the merged composite keys
 all_composite_keys['ShopCode_3char'] = all_composite_keys['CompositeKey'].str[:3]  # Extract the ShopCode_3char from CompositeKey
+all_composite_keys['PersonalNumber'] = all_composite_keys['CompositeKey'].apply(lambda x: x.split('_')[1])
 all_composite_keys['iso_week'] = all_composite_keys['CompositeKey'].apply(lambda x: x.split('_')[-1])
+sfshifts_merged['PersonalNumber']= sfshifts_merged['PersonalNumberKey'].apply(lambda x: x.split('_')[1])
 # Merge with the region_mapping to add the 'REGION', 'AREA', and 'DESCR' (Shop Name)
 all_composite_keys = pd.merge(
     all_composite_keys,
@@ -824,6 +827,14 @@ all_composite_keys = pd.merge(
     right_on='CODE',
     how='left'
 )
+all_composite_keys
+all_composite_keys['Unique Employee[Employee Full Name]'] = all_composite_keys.apply(
+    lambda row: personal_number_to_name[row['PersonalNumber']] 
+    if pd.isna(row['Unique Employee[Employee Full Name]']) else row['Unique Employee[Employee Full Name]'], 
+    axis=1
+)
+
+
 all_composite_keys.head()
 # Step 6: Final Calculations and Fill Missing Values
 all_composite_keys['Diferencia de duración'] = all_composite_keys['Duración HCM'].fillna(0) - all_composite_keys['Duración SF'].fillna(0)
@@ -832,7 +843,7 @@ print(missing_region_rows)
 
 # Step 7: Final output structure and rename columns
 all_composite_keys = all_composite_keys[[
-    'CompositeKey', 'Duración SF', 'Duración HCM', 'Diferencia de duración', 'REGION', 'AREA', 'DESCR', 'iso_week'
+    'CompositeKey', 'Duración SF', 'Duración HCM', 'Diferencia de duración', 'REGION', 'AREA', 'DESCR', 'iso_week','Unique Employee[Employee Full Name]'
 ]]
 
 # Rename for clarity
@@ -841,6 +852,7 @@ all_composite_keys.rename(columns={
     'REGION': 'REGION',
     'AREA': 'AREA',
     'DESCR': 'Shop Name',
+    'Unique Employee[Employee Full Name]' : 'Resource Name'
 }, inplace=True)
 # Remove rows where REGION is blank (i.e., NaN)
 all_composite_keys = all_composite_keys[all_composite_keys['REGION'].notna()]

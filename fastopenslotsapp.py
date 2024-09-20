@@ -122,7 +122,7 @@ current_iso_year, current_iso_week, _ = datetime.now().isocalendar()
 current_date = datetime.now().strftime("%Y-%m-%d")
 yesterday_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-today_file_name = f'shiftslots_{current_date}.xlsx'
+today_file_name = 'shiftslots.xlsx'
 yesterday_file_name = 'shiftslots_sep1.xlsx'
 
 file_mod_time = os.path.getmtime(today_file_name)
