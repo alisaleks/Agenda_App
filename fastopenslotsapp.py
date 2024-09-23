@@ -1509,7 +1509,7 @@ with tab4:
             enable_enterprise_modules=True,
             allow_unsafe_jscode=True,  # Allow JavaScript code execution
             fit_columns_on_grid_load=True,
-            height=185,  # Set grid height for percentage change table
+            height=187,  # Set grid height for percentage change table
             width='100%',
             theme='streamlit',
             custom_css=custom_css_tab6
