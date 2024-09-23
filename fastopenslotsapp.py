@@ -13,9 +13,26 @@ import os
 import numpy as np
 
 @st.cache_data
-def load_excel(file_path, usecols=None, file_mod_time=None, **kwargs):
-    # Load specific columns if usecols is provided to reduce memory usage
-    return pd.read_excel(file_path, usecols=usecols, **kwargs)
+def load_excel(file_path, usecols=None, **kwargs):
+    """ Load an Excel file if it exists. Optionally specify columns to load. """
+    print(f"Checking for file: {file_path}")
+    if os.path.exists(file_path):
+        print(f"Loading {file_path}")
+        return pd.read_excel(file_path, usecols=usecols, **kwargs)
+    else:
+        print(f"File {file_path} not found.")
+        return None
+
+
+
+def find_last_working_day(start_date):
+    """ Helper function to find the last working day before a given start date. """
+    current_date = start_date
+    while True:
+        # Assuming Monday to Friday are working days (customize as needed)
+        if current_date.weekday() < 5:  # Monday is 0 and Friday is 4
+            return current_date
+        current_date -= timedelta(days=1)
 
 st.set_page_config(layout="wide")
 
@@ -118,26 +135,37 @@ start_iso_year, start_iso_week, _ = start_date.isocalendar()
 end_iso_year, end_iso_week, _ = end_date.isocalendar()
 current_iso_year, current_iso_week, _ = datetime.now().isocalendar()
 
+current_date = datetime.now()
+yesterday_date = current_date - timedelta(days=1)
+today_file_name = f"shiftslots_{current_date.strftime('%Y-%m-%d')}.xlsx"
+yesterday_file_name = f"shiftslots_{yesterday_date.strftime('%Y-%m-%d')}.xlsx"
+sep6_file_name = 'shiftslots_sep1.xlsx'
 
-current_date = datetime.now().strftime("%Y-%m-%d")
-yesterday_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+# Step 2: Load today's data, fallback to yesterday if not found
+shift_slots = load_excel(today_file_name)
 
-today_file_name = 'shiftslots.xlsx'
-yesterday_file_name = 'shiftslots_sep1.xlsx'
+if shift_slots is None:
+    print("Today's file not found, trying yesterday's file...")
+    shift_slots = load_excel(yesterday_file_name)
+    
+    # Step 3: If yesterday's file is also not found, find the last working day
+    if shift_slots is None:
+        print("Yesterday's file not found, finding the last working day...")
+        last_working_day = find_last_working_day(yesterday_date)
+        last_working_day_file_name = f"shiftslots_{last_working_day.strftime('%Y-%m-%d')}.xlsx"
+        shift_slots = load_excel(last_working_day_file_name)
 
-file_mod_time = os.path.getmtime(today_file_name)
-shift_slots = load_excel(today_file_name, file_mod_time=file_mod_time)
+shift_slots_yesterday = load_excel(yesterday_file_name)
 
-file_mod_time_yesterday = os.path.getmtime(yesterday_file_name)
-shift_slots_yesterday = load_excel(yesterday_file_name, file_mod_time=file_mod_time_yesterday)
+if shift_slots_yesterday is None:
+    print("Yesterday's file not found, finding the last working day...")
+    last_working_day_yesterday = find_last_working_day(yesterday_date)
+    last_working_day_yesterday_file_name = f"shiftslots_{last_working_day_yesterday.strftime('%Y-%m-%d')}.xlsx"
+    shift_slots_yesterday = load_excel(last_working_day_yesterday_file_name)
 
-file_mod_time1 = os.path.getmtime('hcpshiftslots.xlsx')
-
-hcp_shift_slots = load_excel('hcpshiftslots.xlsx', file_mod_time=file_mod_time1)
-
-file_mod_time2 = os.path.getmtime('hcm_sf_merged.xlsx')
-
-hcm = load_excel('hcm_sf_merged.xlsx', file_mod_time=file_mod_time2)
+shift_slots_sep6 = load_excel(sep6_file_name)
+hcp_shift_slots = load_excel('hcpshiftslots.xlsx')
+hcm = load_excel('hcm_sf_merged.xlsx')
 # Assuming `shift_slots['iso_week']` is a list of ISO weeks
 available_weeks = sorted(shift_slots['iso_week'].unique())
 
@@ -250,11 +278,13 @@ def filter_hcp_shift_slots(data, selected_region, selected_area, selected_shop):
 
     return filtered_data
 
-# Apply the filters for the other datasets
+# Apply the filters fo r the other datasets
 filtered_data = filter_data(shift_slots, iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
 filtered_hcp_shift_slots = filter_hcp_shift_slots(hcp_shift_slots, selected_region, selected_area, selected_shop)
 weekly_shift_slots = filter_hcp_shift_slots(shift_slots, selected_region, selected_area, selected_shop)
 weekly_shift_slots_yesterday = filter_hcp_shift_slots(shift_slots_yesterday, selected_region, selected_area, selected_shop)
+weekly_shift_sep6 = filter_hcp_shift_slots(shift_slots_sep6, selected_region, selected_area, selected_shop)
+
 # Apply the filters to HCM data (without iso_week filter)
 filtered_hcm = filter_hcm_data(hcm, selected_region, selected_area, selected_shop)
 # Check if filtered data is empty after applying the filters
@@ -328,7 +358,7 @@ hcp_data = filtered_hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceRes
     BlockedHours=('AbsenceDurationHours', 'sum'),
 ).reset_index()
 
-tab6, tab1, tab2, tab3, tab4, tab5 = st.tabs(["Weekly Change Analysis", "Open Hours / Total Hours", "Blocked Hours %", "Progression", "HCM vs SF", "REX"])
+tab6, tab1, tab2, tab4, tab5 = st.tabs(["Weekly Change Analysis", "Open Hours / Total Hours", "Blocked Hours %", "HCM vs SF", "REX"])
 
 with tab1:    
     st.markdown(''':green[ *****Total Hours***: Todos los turnos configurados*]''')
@@ -626,208 +656,6 @@ with tab2:
         )
     except Exception as ex:
         st.error(f"An error occurred: {ex}")
-
-with tab3:
-    st.markdown("""
-        <style>
-        /* Style the headers for "Select View" and "Select Date Range" */
-        .custom-header {
-            font-size: 20px;
-            font-weight: bold;
-            color: #cc0641;  /* Reference color */
-            margin-bottom: 5px;  /* Reduced space below header */
-            padding: 5px;
-            border-left: 5px solid #cc0641; /* Add a colored border on the left */
-            background-color: #f9f9f9; /* Light background for contrast */
-            border-radius: 3px; /* Slight rounding of edges */
-        }
-
-        /* Reduce space between header and radio buttons */
-        div[role="radiogroup"] {
-            margin-top: -20px;  /* Bring radio buttons closer to the header */
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-    # Use st.columns to position filters side by side
-    col1, col2 = st.columns(2)
-
-    with col1:
-        # Styled header for "Select View"
-        st.markdown('<div class="custom-header">Select View:</div>', unsafe_allow_html=True)
-        view_type = st.radio("", ['Available Hours', 'Blocked Hours'], key="view_type")
-
-    with col2:
-        # Styled header for "Select Date Range"
-        st.markdown('<div class="custom-header">Select Date Range:</div>', unsafe_allow_html=True)
-        date_range_type = st.radio("", ['Month to Go', 'Total of Month'], key="date_range_type")
-
-    # Define the starting and ending dates for the current month, capping it to today
-    today = pd.Timestamp(datetime.now().date())
-    start_of_month = today.replace(day=1)
-    # Get all days from start of the month to today, excluding Sundays
-    all_days_in_month = pd.date_range(start=start_of_month, end=today)
-    all_days_in_month = all_days_in_month[all_days_in_month.weekday != 6]  # Remove Sundays
-
-    # Define the end of the current month
-    end_of_month = today.replace(day=1) + pd.offsets.MonthEnd(0)
-
-    # Color-coding JavaScript for Available and Blocked Hours
-    if view_type == 'Available Hours':
-        column_values = 'AvailableHours'
-
-        color_coding_js = JsCode(f"""
-        function(params) {{
-            var value = params.value;
-
-            if (params.data['Shop_Name'] === 'Total') {{
-                return {{'font-weight': 'bold', 'backgroundColor': '#e0e0e0'}};  // Grey background for total row
-            }} else if (params.colDef.headerName.includes('Total of Month')) {{
-                // Color coding for "Total of Month"
-                if (value === 0) {{
-                    return {{'backgroundColor': '#cc0641', 'color': 'black'}};  // Green for 0
-                }} else if (value > 80) {{
-                    return {{'backgroundColor': '#95cd41', 'color': 'white'}};  // Red for > 80
-                }} else {{
-                    return {{'backgroundColor': '#f1b84b', 'color': 'black'}};  // Orange for other values
-                }}
-            }} else {{
-                // Color coding for "Month to Go"
-                if (value === 0) {{
-                    return {{'backgroundColor': '#cc0641', 'color': 'black'}};  // Green for 0
-                }} else if (value > 80) {{
-                    return {{'backgroundColor': '#95cd41', 'color': 'white'}};  // Red for > 80
-                }} else {{
-                    return {{'backgroundColor': '#f1b84b', 'color': 'black'}};  // Orange for other values
-                }}
-            }}
-        }}
-        """)
-    else:
-        column_values = 'BlockedHours'
-
-        color_coding_js = JsCode(f"""
-        function(params) {{
-            var value = params.value;
-
-            if (params.data['Shop_Name'] === 'Total') {{
-                return {{'font-weight': 'bold', 'backgroundColor': '#e0e0e0'}};  // Grey background for total row
-            }} else if (params.colDef.headerName.includes('Total of Month')) {{
-                // Color coding for "Total of Month"
-                if (value === 0) {{
-                    return {{'backgroundColor': '#95cd41', 'color': 'black'}};  // Green for 0
-                }} else if (value >= 8) {{
-                    return {{'backgroundColor': '#cc0641', 'color': 'white'}};  // Red for >= 8
-                }} else {{
-                    return {{'backgroundColor': '#f1b84b', 'color': 'black'}};  // Orange for < 8
-                }}
-            }} else {{
-                // Color coding for "Month to Go"
-                if (value === 0) {{
-                    return {{'backgroundColor': '#95cd41', 'color': 'black'}};  // Green for 0
-                }} else if (value >= 8) {{
-                    return {{'backgroundColor': '#cc0641', 'color': 'white'}};  // Red for >= 8
-                }} else {{
-                    return {{'backgroundColor': '#f1b84b', 'color': 'black'}};  // Orange for < 8
-                }}
-            }}
-        }}
-        """)
-
-    # Create a list to store pivot data for each day
-    pivot_data = []
-
-    # "Month to Go" calculation
-    if date_range_type == 'Month to Go':
-        # Calculate the sum from each day to the end of the month
-        for day in all_days_in_month:
-            day_data = hcp_data[(hcp_data['ShiftDate'] >= day) & (hcp_data['ShiftDate'] <= end_of_month)]
-            day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
-            day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Month to Go']
-            pivot_data.append(day_sum)
-    # "Total of Month" calculation
-    else:
-        # Calculate the sum from the start of the month to each day
-        for day in all_days_in_month:
-            day_data = hcp_data[hcp_data['ShiftDate'] <= day]
-            day_sum = day_data.groupby(['Shop[Name]', 'GT_ServiceResource__r.Name'])[column_values].sum().reset_index()
-            day_sum.columns = ['Shop Name', 'Resource Name', f'{day.date()} Total of Month']
-            pivot_data.append(day_sum)
-
-    # Merge the daily data into one DataFrame
-    merged_data = pivot_data[0]
-    for df in pivot_data[1:]:
-        merged_data = pd.merge(merged_data, df, on=['Shop Name', 'Resource Name'], how='outer')
-
-    # Fill in blanks with zeros
-    merged_data.fillna(0, inplace=True)
-    merged_data.columns = [col.replace(' ', '_') for col in merged_data.columns]
-
-    # Dynamic column definitions with conditional formatting
-    columnDefs = [
-        {
-            "headerName": "Shop Name",
-            "field": "Shop_Name",
-            "resizable": True,
-            "flex": 2,
-            "minWidth": 150,
-            "filter": 'agTextColumnFilter',
-        },
-        {
-            "headerName": "Resource Name",
-            "field": "Resource_Name",
-            "resizable": True,
-            "flex": 2,
-            "minWidth": 150,
-            "filter": 'agTextColumnFilter',
-        }
-    ]
-
-    # Append dynamic column definitions for each day
-    for day in all_days_in_month:
-        columnDefs.append({
-            "headerName": f"{day.date()}",
-            "field": f"{day.date()}_{date_range_type.replace(' ', '_')}",
-            "valueFormatter": "x.toFixed(1)",
-            "resizable": True,
-            "flex": 1,
-            "cellStyle": color_coding_js  # Apply color coding
-        })
-
-    # Calculate totals for numeric columns
-    total_row = {'Shop_Name': 'Total', 'Resource_Name': ''}
-    for col in merged_data.columns[2:]:
-        total_row[col] = merged_data[col].sum()
-
-    # Append the total row to the data
-    total_df = pd.DataFrame(total_row, index=[0])
-    df_with_totals = pd.concat([merged_data, total_df], ignore_index=True)
-
-    # Configure GridOptionsBuilder with the updated data and column definitions
-    gb_tab3 = GridOptionsBuilder.from_dataframe(df_with_totals)
-
-    # Add individual column configurations
-    for col_def in columnDefs:
-        gb_tab3.configure_column(**col_def)
-
-    # Allow columns to fill the width and use autoHeight for rows
-    gb_tab3.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
-
-    # Build grid options
-    grid_options_tab3 = gb_tab3.build()
-
-    # Render the AG-Grid in Streamlit with full width and custom styling
-    AgGrid(
-        df_with_totals,
-        gridOptions=grid_options_tab3,
-        enable_enterprise_modules=True,
-        allow_unsafe_jscode=True,
-        fit_columns_on_grid_load=True,
-        height=1000,
-        width='100%',
-        theme='streamlit',
-        custom_css=custom_css  # Apply custom CSS
-    )
 
 with tab4:
     url1 = "https://amplifongroup.service-now.com/esc?id=esc_dashboard"
@@ -1292,9 +1120,90 @@ with tab4:
                 </div>
                 """, unsafe_allow_html=True)
 
+        st.markdown("### Tiendas Cerradas (Para Hoy)")
+
+        # Step 1: Filter the dataset for closed shops (TotalHours = 0 or BlockedHoursPercentage = 100%)
+        closed_shops_data = weekly_shift_slots[
+            (weekly_shift_slots['date'].dt.date == today) &
+            ((weekly_shift_slots['TotalHours'] == 0) | (weekly_shift_slots['BlockedHoursPercentage'] == 100))
+        ][['Region', 'Shop[Name]', 'TotalHours', 'BlockedHoursPercentage']].copy()
+
+        # Sort by region
+        closed_shops_data = closed_shops_data.sort_values(by='Region')
+
+        # Get unique regions with closed shops
+        regions_with_closed_shops = closed_shops_data['Region'].unique()
+
+        # Custom CSS for styling the boxes and the shop list (same style as before)
+        st.markdown("""
+            <style>
+            .custom-box {
+                border: 2px solid #cc0641;
+                border-radius: 10px;
+                padding: 15px;
+                margin-bottom: 10px;
+                background-color: #f9f9f9;
+                text-align: center;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            .custom-box h5 {
+                color: #cc0641;
+                font-size: 18px;
+                font-weight: bold;
+                margin-bottom: 10px;
+                text-transform: uppercase;
+            }
+            .shop-list {
+                margin-top: 10px;
+                text-align: left;
+                line-height: 1.6;  /* Increased line height for readability */
+            }
+            .shop-list p {
+                font-size: 14px;
+                margin: 0;
+            }
+            .shop-list strong {
+                color: #333;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Split regions into groups of 4 (for displaying in 4 columns per row)
+        for start_idx in range(0, len(regions_with_closed_shops), 4):
+            cols_closed = st.columns(4)  # Create 4 columns for this row
+            
+            # Display up to 4 regions in the current row
+            for i, region in enumerate(regions_with_closed_shops[start_idx:start_idx + 4]):
+                with cols_closed[i]:  # Ensure 4 regions per row
+                    # Filter the data for the current region
+                    closed_shops = closed_shops_data[closed_shops_data['Region'] == region]
+
+                    shop_list = ""
+                    for index, row in closed_shops.iterrows():
+                        shop_name = row['Shop[Name]']
+                        total_hours = row['TotalHours']
+                        blocked_pct = row['BlockedHoursPercentage']
+
+                        # Append shop details to the list
+                        shop_list += f"<p>- <strong>{shop_name}</strong>: {total_hours} Hours, {blocked_pct:,.0f}% Blocked</p>"
+
+                    # Render both the header and the shop list inside the box
+                    st.markdown(f"""
+                    <div class="custom-box">
+                        <h5>{region}</h5>
+                        <div class="shop-list">
+                            {shop_list}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
     with tab6:
         st.markdown("### Weekly Overview")
-
+        # Add a new selectbox for comparison options
+        comparison_options = ['Comparison with start of the month (Sep 6)', 'Comparison with yesterday']
+        selected_comparison = st.selectbox('Select Comparison:', comparison_options)
+        
         metric_options = ['Shift Hours % change', 'Blocked Hours % change']
         selected_metric = st.selectbox('Select Metric:', metric_options)
         metric_map = {
@@ -1304,6 +1213,7 @@ with tab4:
 
         # Get the column associated with the selected metric
         metric_column = metric_map[selected_metric]
+
         start_date_sep = datetime(2024, 9, 2) 
         end_date_sep = datetime(2024, 9, 30)
         weekly_shift_slots.tail()
@@ -1331,6 +1241,25 @@ with tab4:
         weekly_aggregated_yesterday = weekly_aggregated_yesterday.fillna(0)
         weekly_aggregated_yesterday = weekly_aggregated_yesterday.reset_index()
 
+        # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
+        weekly_aggregated_sep6 = weekly_shift_sep6.pivot_table(
+            index='Region',
+            columns='iso_week',
+            values=f'{metric_column}',
+            aggfunc='sum',
+            fill_value=0
+        )
+        weekly_aggregated_sep6 = weekly_aggregated_sep6.fillna(0)
+        weekly_aggregated_sep6 = weekly_aggregated_sep6.reset_index()
+        
+        # Adjust the logic to use different dataframes based on the comparison selection
+        if selected_comparison == 'Comparison with start of the month (Sep 6)':
+            comparison_df = weekly_aggregated_sep6  # Assuming Sep 6 data is stored in weekly_aggregated_yesterday
+            comparison_label = 'Sep 6'
+        else:
+            comparison_df = weekly_aggregated_yesterday  # Assuming yesterday's data is in weekly_aggregated_yesterday2
+            comparison_label = 'Yesterday'
+
         # Step 1: Melt the data to convert wide to long format
         weekly_aggregated_melted = pd.melt(
             weekly_aggregated, 
@@ -1338,17 +1267,17 @@ with tab4:
             var_name='iso_week', 
             value_name=f'{metric_column}_today'
         )
-        weekly_aggregated_yesterday_melted = pd.melt(
-            weekly_aggregated_yesterday, 
+        comparison_melted = pd.melt(
+            comparison_df, 
             id_vars=['Region'], 
             var_name='iso_week', 
-            value_name=f'{metric_column}_yesterday'
+            value_name=f'{metric_column}_comparison'
         )
 
         # Step 2: Merge the two dataframes on Region and iso_week
         merged_data = pd.merge(
             weekly_aggregated_melted, 
-            weekly_aggregated_yesterday_melted, 
+            comparison_melted, 
             on=['Region', 'iso_week'], 
             how='inner'
         )
@@ -1356,20 +1285,20 @@ with tab4:
         merged_grouped = merged_data.groupby(['Region', 'iso_week']).agg(
             {
                 f'{metric_column}_today': 'sum',  # Sum today's metric values
-                f'{metric_column}_yesterday': 'sum'  # Sum yesterday's metric values
+                f'{metric_column}_comparison': 'sum'  # Sum yesterday's metric values
             }
         ).reset_index()
         weekly_totals = merged_grouped.groupby('iso_week').agg(
-            {f'{metric_column}_today': 'sum', f'{metric_column}_yesterday': 'sum'}
+            {f'{metric_column}_today': 'sum', f'{metric_column}_comparison': 'sum'}
         ).reset_index()
 
         # Step 3: Calculate monthly totals (sum over all weeks)
         monthly_total_today = weekly_totals[f'{metric_column}_today'].sum()
-        monthly_total_yesterday = weekly_totals[f'{metric_column}_yesterday'].sum()
+        monthly_total_comparison = weekly_totals[f'{metric_column}_comparison'].sum()
 
         # Step 7: Add the month column for each region based on the aggregated data
         region_month_totals = merged_grouped.groupby('Region').agg(
-            {f'{metric_column}_today': 'sum', f'{metric_column}_yesterday': 'sum'}
+            {f'{metric_column}_today': 'sum', f'{metric_column}_comparison': 'sum'}
         ).reset_index()
 
         def calculate_percentage_change(today_value, yesterday_value):
@@ -1379,16 +1308,16 @@ with tab4:
         
         # Step 2: Calculate percentage change for each week based on the total values
         weekly_totals['total_percentage_change'] = weekly_totals.apply(
-            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_yesterday']), axis=1
+            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_comparison']), axis=1
         )
         # Step 3: Calculate percentage change
         merged_data['percentage_change'] = merged_data.apply(
-            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_yesterday']), axis=1
+            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_comparison']), axis=1
         )
-        monthly_percentage_change = calculate_percentage_change(monthly_total_today, monthly_total_yesterday)
+        monthly_percentage_change = calculate_percentage_change(monthly_total_today, monthly_total_comparison)
         # Calculate percentage change for the month for each region
         region_month_totals['month_percentage_change'] = region_month_totals.apply(
-            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_yesterday']), axis=1
+            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_comparison']), axis=1
         )
         # Step 4: Optional sorting or filtering
         merged_data_sorted = merged_data.sort_values(by=['Region', 'iso_week'])
@@ -1501,7 +1430,7 @@ with tab4:
         grid_options_tab6_pct_change['columnDefs'] = columnDefs_tab6_pct_change
 
         # Render pivot_pct_change table using AgGrid
-        st.markdown(f"### {selected_metric}: Today vs Sep 6")
+        st.markdown(f"### {selected_metric}: Today vs {comparison_label}")
 
         AgGrid(
             merged_pivot,
@@ -1517,14 +1446,14 @@ with tab4:
 
         # Aggregate totals for each iso_week across all regions
         merged_grouped_total = merged_grouped.groupby('iso_week').agg(
-            {f'{metric_column}_today': 'sum', f'{metric_column}_yesterday': 'sum'}
+            {f'{metric_column}_today': 'sum', f'{metric_column}_comparison': 'sum'}
         ).reset_index()
 
         # Create a new row for the monthly total without formatting for calculation purposes
         monthly_totals_row = pd.DataFrame({
             'iso_week': ['Month Total'],  # Label for the new row
             f'{metric_column}_today': [monthly_total_today],  # Monthly total for today
-            f'{metric_column}_yesterday': [monthly_total_yesterday]  # Monthly total for yesterday
+            f'{metric_column}_comparison': [monthly_total_comparison]  # Monthly total for yesterday
         })
 
         # Append the new row to the merged_grouped_total DataFrame
@@ -1532,39 +1461,44 @@ with tab4:
 
         # Format numbers with commas and round them to integers
         merged_grouped_total[f'{metric_column}_today'] = merged_grouped_total[f'{metric_column}_today'].round(0).apply(lambda x: f"{int(x):,}")
-        merged_grouped_total[f'{metric_column}_yesterday'] = merged_grouped_total[f'{metric_column}_yesterday'].round(0).apply(lambda x: f"{int(x):,}")
-
+        merged_grouped_total[f'{metric_column}_comparison'] = merged_grouped_total[f'{metric_column}_comparison'].round(0).apply(lambda x: f"{int(x):,}")
         # Create an interactive bar chart using Plotly
         fig = go.Figure()
+
+        # Adjust the comparison label dynamically
+        comparison_label = 'Sep 6' if selected_comparison == 'Comparison with start of the month (Sep 6)' else 'Yesterday'
 
         # Add bars for 'today' values
         fig.add_trace(go.Bar(
             x=merged_grouped_total['iso_week'],
             y=merged_grouped_total[f'{metric_column}_today'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
             name='Today',
-            marker_color='#cc0641',  # Use the custom color
+            marker_color='#cc0641',  # Use the custom color for 'Today'
             text=merged_grouped_total[f'{metric_column}_today'],  # Show the formatted values
             textposition='auto'
         ))
 
-        # Add bars for 'yesterday' values with a lighter shade of the custom color
+        # Add bars for 'comparison' values with a dynamic label (either 'Yesterday' or 'Sep 6')
         fig.add_trace(go.Bar(
             x=merged_grouped_total['iso_week'],
-            y=merged_grouped_total[f'{metric_column}_yesterday'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
-            name='Sep 6',
-            marker_color='#f1b84b',  # Lighter shade of the custom color
-            text=merged_grouped_total[f'{metric_column}_yesterday'],  # Show the formatted values
+            y=merged_grouped_total[f'{metric_column}_comparison'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
+            name=comparison_label,  # Dynamic label for the comparison column
+            marker_color='#f1b84b',  # Lighter shade for the comparison
+            text=merged_grouped_total[f'{metric_column}_comparison'],  # Show the formatted values
             textposition='auto'
         ))
 
         # Customize layout
         fig.update_layout(
-            title=f'Comparison of {metric_column} for Today vs Sep 6 (Aggregated Across Regions)',
-            xaxis=dict(title='ISO Week / Month', type='category',  
-                    categoryorder='array',  # Order the x-axis categories manually
-                    categoryarray=list(merged_grouped_total['iso_week'])),  # Set the correct order: weeks followed by "Month Total"
+            title=f'Comparison of {metric_column} for Today vs {comparison_label} (Aggregated Across Regions)',  # Adjust the title dynamically
+            xaxis=dict(
+                title='ISO Week / Month', 
+                type='category',
+                categoryorder='array',  # Order the x-axis categories manually
+                categoryarray=list(merged_grouped_total['iso_week'])  # Set the correct order: weeks followed by "Month Total"
+            ),
             yaxis=dict(title=f'{metric_column}'),
-            barmode='group',  # Group the bars for today and yesterday side-by-side
+            barmode='group',  # Group the bars for today and the comparison side-by-side
             bargap=0.2,  # Set gap between bars
             bargroupgap=0.1,  # Set gap between groups
             legend_title="Metric",
