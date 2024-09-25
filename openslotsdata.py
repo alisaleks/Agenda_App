@@ -1,6 +1,7 @@
 import pandas as pd
 import pytz
 from datetime import datetime, timedelta
+import calendar
 import json
 
 # Function to handle out-of-bound datetime values
@@ -147,16 +148,64 @@ absences.rename(columns={
 # Load regionmapping data
 region_mapping_path = 'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/regionmapping.xlsx'
 region_mapping = load_excel(region_mapping_path)
-region_mapping.columns
 # Filter the original region_mapping DataFrame
 region_mapping = region_mapping[region_mapping['SYM'] != 'N']
 
 sfshifts['StartTime'] = pd.to_datetime(sfshifts['Shift[StartTime]'], errors='coerce')
 sfshifts['EndTime'] = pd.to_datetime(sfshifts['Shift[EndTime]'], errors='coerce')
-start_date = datetime(2024, 9, 2) 
-end_date = datetime(2024, 10, 6)
+def get_first_iso_week_start_date_current_month():
+    # Get the current date
+    today = datetime.today()
+    
+    # Get the first day of the current month with the time set to 00:00:00
+    first_day_of_month = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    # Check if the first day of the month is a Sunday
+    if first_day_of_month.weekday() == 6:  # Sunday is represented by 6 in weekday()
+        # If Sunday, move to the next Monday
+        first_day_of_month += timedelta(days=1)
+    
+    # Get the ISO calendar week and weekday of the first day of the month
+    iso_year, iso_week, iso_weekday = first_day_of_month.isocalendar()
+    
+    # Calculate the difference to get back to the Monday of that ISO week
+    # ISO weeks start on Monday (iso_weekday = 1), so subtract the days to go back to Monday
+    start_date = first_day_of_month - timedelta(days=iso_weekday - 1)
+    
+    # Ensure the time part is set to 00:00:00
+    start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    return start_date
+
+def get_last_iso_week_end_date_current_month():
+    # Get the current date
+    today = datetime.today()
+    
+    # Get the last day of the current month with the time set to 00:00:00
+    last_day_of_month = today.replace(day=calendar.monthrange(today.year, today.month)[1], hour=0, minute=0, second=0, microsecond=0)
+    
+    # Get the ISO calendar week and weekday of the last day of the month
+    iso_year, iso_week, iso_weekday = last_day_of_month.isocalendar()
+    
+    # Calculate the difference to get to Sunday of that ISO week
+    # ISO weeks end on Sunday (iso_weekday = 7), so add the days to go to Sunday
+    end_date = last_day_of_month + timedelta(days=(7 - iso_weekday))
+    
+    # Ensure the time part is set to 00:00:00
+    end_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    return end_date
+
+# Example usage: dynamically calculate start and end dates for the current month
+start_date = get_first_iso_week_start_date_current_month()
+end_date = get_last_iso_week_end_date_current_month()
+
+print(f"The start date of the 1st ISO week of the current month (excluding Sunday start) is: {start_date}")
+print(f"The end date of the last ISO week of the current month is: {end_date}")
+
 start_iso_year, start_iso_week, _ = start_date.isocalendar()
 end_iso_year, end_iso_week, _ = end_date.isocalendar()
+
 shifts_filtered = sfshifts[(sfshifts['StartTime'] >= start_date) & (sfshifts['EndTime'] <= end_date)].copy()
 # Rename columns to match
 shifts_filtered.rename(columns={

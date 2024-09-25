@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pytz
 from datetime import datetime, timedelta
+import calendar
 from st_aggrid import GridOptionsBuilder, AgGrid, JsCode
 from st_aggrid.shared import GridUpdateMode, DataReturnMode, ColumnsAutoSizeMode, AgGridTheme, ExcelExportMode
 from st_aggrid.AgGridReturn import AgGridReturn
@@ -128,18 +129,81 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+def get_first_iso_week_start_date_current_month():
+    # Get the current date
+    today = datetime.today()
+    
+    # Get the first day of the current month with the time set to 00:00:00
+    first_day_of_month = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    # Check if the first day of the month is a Sunday
+    if first_day_of_month.weekday() == 6:  # Sunday is represented by 6 in weekday()
+        # If Sunday, move to the next Monday
+        first_day_of_month += timedelta(days=1)
+    
+    # Get the ISO calendar week and weekday of the first day of the month
+    iso_year, iso_week, iso_weekday = first_day_of_month.isocalendar()
+    
+    # Calculate the difference to get back to the Monday of that ISO week
+    # ISO weeks start on Monday (iso_weekday = 1), so subtract the days to go back to Monday
+    start_date = first_day_of_month - timedelta(days=iso_weekday - 1)
+    
+    # Ensure the time part is set to 00:00:00
+    start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    return start_date
 
-start_date = datetime(2024, 9, 2) 
-end_date = datetime(2024, 10, 6)
+def get_last_iso_week_end_date_current_month():
+    # Get the current date
+    today = datetime.today()
+    
+    # Get the last day of the current month with the time set to 00:00:00
+    last_day_of_month = today.replace(day=calendar.monthrange(today.year, today.month)[1], hour=0, minute=0, second=0, microsecond=0)
+    
+    # Get the ISO calendar week and weekday of the last day of the month
+    iso_year, iso_week, iso_weekday = last_day_of_month.isocalendar()
+    
+    # Calculate the difference to get to Sunday of that ISO week
+    # ISO weeks end on Sunday (iso_weekday = 7), so add the days to go to Sunday
+    end_date = last_day_of_month + timedelta(days=(7 - iso_weekday))
+    
+    # Ensure the time part is set to 00:00:00
+    end_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    return end_date
+
+# Example usage: dynamically calculate start and end dates for the current month
+start_date = get_first_iso_week_start_date_current_month()
+end_date = get_last_iso_week_end_date_current_month()
+
+print(f"The start date of the 1st ISO week of the current month (excluding Sunday start) is: {start_date}")
+print(f"The end date of the last ISO week of the current month is: {end_date}")
+
 start_iso_year, start_iso_week, _ = start_date.isocalendar()
 end_iso_year, end_iso_week, _ = end_date.isocalendar()
 current_iso_year, current_iso_week, _ = datetime.now().isocalendar()
+
+def get_start_and_end_of_current_month():
+    # Get the current date
+    today = datetime.today()
+    
+    # Start date is the 1st day of the current month
+    month_start_date = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    # End date is the last day of the current month
+    last_day_of_month = calendar.monthrange(today.year, today.month)[1]  # Get last day of current month
+    month_end_date = today.replace(day=last_day_of_month, hour=23, minute=59, second=59, microsecond=999999)
+    
+    return month_start_date, month_end_date
+
+# Example usage to get the start and end dates of the current month
+month_start_date, month_end_date = get_start_and_end_of_current_month()
 
 current_date = datetime.now()
 yesterday_date = current_date - timedelta(days=1)
 today_file_name = f"shiftslots_{current_date.strftime('%Y-%m-%d')}.xlsx"
 yesterday_file_name = f"shiftslots_{yesterday_date.strftime('%Y-%m-%d')}.xlsx"
-sep6_file_name = 'shiftslots_sep1.xlsx'
+sep6_file_name = f"shiftslots_{month_start_date.strftime('%Y-%m-%d')}.xlsx"
 
 # Step 2: Load today's data, fallback to yesterday if not found
 shift_slots = load_excel(today_file_name)
@@ -150,8 +214,8 @@ if shift_slots is None:
     
     # Step 3: If yesterday's file is also not found, find the last working day
     if shift_slots is None:
-        print("Yesterday's file not found, finding the last working day...")
-        last_working_day = find_last_working_day(yesterday_date)
+        print("Today's file not found, finding the last working day...")
+        last_working_day = find_last_working_day(current_date)
         last_working_day_file_name = f"shiftslots_{last_working_day.strftime('%Y-%m-%d')}.xlsx"
         shift_slots = load_excel(last_working_day_file_name)
 
@@ -1214,11 +1278,9 @@ with tab4:
         # Get the column associated with the selected metric
         metric_column = metric_map[selected_metric]
 
-        start_date_sep = datetime(2024, 9, 2) 
-        end_date_sep = datetime(2024, 9, 30)
-        weekly_shift_slots = weekly_shift_slots[(weekly_shift_slots['date'] >= start_date_sep) & (weekly_shift_slots['date'] <= end_date_sep)].copy()
-        weekly_shift_slots_yesterday = weekly_shift_slots_yesterday[(weekly_shift_slots_yesterday['date'] >= start_date_sep) & (weekly_shift_slots_yesterday['date'] <= end_date_sep)].copy()
-        weekly_shift_sep6 = weekly_shift_sep6[(weekly_shift_sep6['date'] >= start_date_sep) & (weekly_shift_sep6['date'] <= end_date_sep)].copy()        
+        weekly_shift_slots = weekly_shift_slots[(weekly_shift_slots['date'] >= month_start_date) & (weekly_shift_slots['date'] <= month_end_date)].copy()
+        weekly_shift_slots_yesterday = weekly_shift_slots_yesterday[(weekly_shift_slots_yesterday['date'] >= month_start_date) & (weekly_shift_slots_yesterday['date'] <= month_end_date)].copy()
+        weekly_shift_sep6 = weekly_shift_sep6[(weekly_shift_sep6['date'] >= month_start_date) & (weekly_shift_sep6['date'] <= month_end_date)].copy()        
             # Pivot the table for Tab 4
         weekly_aggregated = weekly_shift_slots.pivot_table(
             index='Region',
