@@ -17,20 +17,25 @@ jobs:
         id: check_changes
         run: |
           git fetch
-          git diff --quiet shiftslots.xlsx || echo "File has changed."
-        continue-on-error: true  # Allow the next step to run even if no changes found
+          if git diff --quiet; then  # Check for any changes in the repository
+            echo "No changes detected."
+            echo "changes_detected=false" >> $GITHUB_ENV
+          else
+            echo "Changes detected."
+            echo "changes_detected=true" >> $GITHUB_ENV
+          fi
 
       - name: Commit and push changes
-        if: steps.check_changes.outcome == 'success'  # Proceed if changes detected
+        if: env.changes_detected == 'true'  # Proceed if changes detected
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add shiftslots.xlsx  # Updated path
-          git commit -m 'Update shiftslots dataset'  # Updated commit message
+          git add --all  # Add all changes
+          git commit -m 'Update dataset and other changes'  # Updated commit message
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: No changes found
-        if: steps.check_changes.outcome != 'success'  # If no changes, this step runs
+        if: env.changes_detected == 'false'  # If no changes, this step runs
         run: echo "No changes detected, skipping commit."
