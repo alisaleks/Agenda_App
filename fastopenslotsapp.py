@@ -140,7 +140,7 @@ yesterday_date = current_date - timedelta(days=1)
 today_file_name = f"shiftslots_{current_date.strftime('%Y-%m-%d')}.xlsx"
 yesterday_file_name = f"shiftslots_{yesterday_date.strftime('%Y-%m-%d')}.xlsx"
 sep6_file_name = 'shiftslots_sep1.xlsx'
-yesterday_file_name
+
 # Step 2: Load today's data, fallback to yesterday if not found
 shift_slots = load_excel(today_file_name)
 
