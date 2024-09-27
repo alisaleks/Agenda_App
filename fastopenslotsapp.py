@@ -720,7 +720,6 @@ with tab2:
         )
     except Exception as ex:
         st.error(f"An error occurred: {ex}")
-
 with tab4:
     url1 = "https://amplifongroup.service-now.com/esc?id=esc_dashboard"
     url2 = "https://amplifongroup.service-now.com/sp_amp?id=sc_category_amp&sys_id=9ddfb4d3db96209072ccbb13f3961918"
@@ -735,7 +734,7 @@ with tab4:
     pivot_table_tab4 = filtered_hcm.pivot_table(
         index='Resource Name',
         columns='iso_week',
-        values=['Duración SF', 'Duración HCM', 'Diferencia de duración'],
+        values=['Duración SF', 'Duración HCM', 'Diferencia de hcm duración'],
         fill_value=0
     )
     # Flatten the columns for display
