@@ -731,7 +731,7 @@ with tab4:
 
     # Pivot the table for Tab 4
     pivot_table_tab4 = filtered_hcm.pivot_table(
-        index='Resource Name',
+        index='ServiceResourceName SF_x',
         columns='iso_week',
         values=['Duración SF', 'Duración HCM', 'Diferencia de hcm duración'],
         fill_value=0
@@ -810,7 +810,7 @@ with tab4:
     # Define the column configuration for "Shop Name"
     columnDefs = [
         {
-            "headerName": "Resource Name",
+            "headerName": "ServiceResourceName SF_x",
             "field": "Resource_Name",
             "resizable": True,
             "flex": 2,
