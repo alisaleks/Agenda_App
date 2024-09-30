@@ -731,9 +731,10 @@ with tab4:
 
     # Pivot the table for Tab 4
     pivot_table_tab4 = filtered_hcm.pivot_table(
-        index='ServiceResourceName SF_x',
+        index='Resource Name',
         columns='iso_week',
         values=['Duración SF', 'Duración HCM', 'Diferencia de hcm duración'],
+        aggfunc='sum',
         fill_value=0
     )
     # Flatten the columns for display
@@ -810,14 +811,13 @@ with tab4:
     # Define the column configuration for "Shop Name"
     columnDefs = [
         {
-            "headerName": "ServiceResourceName SF_x",
+            "headerName": "Resource_Name",
             "field": "Resource_Name",
             "resizable": True,
             "flex": 2,
             "minWidth": 150
         }
     ]
-
     # Append dynamic column definitions for each week's SF, HCM, Delta (apply color coding based on Delta value)
     for week in range(start_iso_week, end_iso_week):
         columnDefs.append({
@@ -840,7 +840,7 @@ with tab4:
                     "cellStyle": js_code  # Apply the same color coding to totals row
                 },
                 {
-                    "field": f"Week_{week}_Diferencia_de_duración",
+                    "field": f"Week_{week}_Diferencia_de_hcm_duración",
                     "headerName": "Delta",
                     "valueFormatter": "x.toFixed(1)",
                     "resizable": True,
