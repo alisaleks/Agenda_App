@@ -1287,6 +1287,7 @@ with tab4:
         weekly_shift_slots = weekly_shift_slots[(weekly_shift_slots['date'] >= month_start_date) & (weekly_shift_slots['date'] <= month_end_date)].copy()
         weekly_shift_slots_yesterday = weekly_shift_slots_yesterday[(weekly_shift_slots_yesterday['date'] >= month_start_date) & (weekly_shift_slots_yesterday['date'] <= month_end_date)].copy()
         weekly_shift_sep6 = weekly_shift_sep6[(weekly_shift_sep6['date'] >= month_start_date) & (weekly_shift_sep6['date'] <= month_end_date)].copy()        
+          
             # Pivot the table for Tab 4
         weekly_aggregated = weekly_shift_slots.pivot_table(
             index='Region',

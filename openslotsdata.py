@@ -619,7 +619,6 @@ personal_number_to_name = {
     f"{resources['GT_ShopCode__c'][index]}_{personal_number}":resources['Service Resource[Name]'][index]
     for index, personal_number in enumerate(resources['PersonalNumber'])
 }
-personal_number_to_name = dict(zip(resources['GT_ShopCode__c'], resources['PersonalNumber'], resources['Service Resource[Name]']))
 #Deleting unused DataFrames to free up memory
 del sfshifts, resources, appointments, absences
 
@@ -1064,10 +1063,9 @@ shift_duration_per_week = sfshifts_merged.groupby(
 ).agg({
     'ShiftDurationHours': 'sum',
     'GT_ServiceResource__r.Name': 'first',
-    'PersonalNumber': 'first',
 }).reset_index()
 shift_duration_per_week.rename(columns={'ShiftDurationHours': 'Duración SF'}, inplace=True)
-
+shift_duration_per_week['PersonalNumber'] = shift_duration_per_week['CompositeKey'].str[4:-8]
 # Now you can check for missing values again if needed
 missing_rows_after_fill = shift_duration_per_week[shift_duration_per_week['GT_ServiceResource__r.Name'].isna() | shift_duration_per_week['PersonalNumber'].isna()]
 
