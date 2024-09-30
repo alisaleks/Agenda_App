@@ -731,7 +731,7 @@ with tab4:
 
     # Pivot the table for Tab 4
     pivot_table_tab4 = filtered_hcm.pivot_table(
-        index='Resource Name',
+        index=['Resource Name', 'Shop Name'],
         columns='iso_week',
         values=['Duración SF', 'Duración HCM', 'Diferencia de hcm duración'],
         aggfunc='sum',
@@ -816,7 +816,15 @@ with tab4:
             "resizable": True,
             "flex": 2,
             "minWidth": 150
+        },
+        {
+            "headerName": "Shop_Name",
+            "field": "Shop_Name",
+            "resizable": True,
+            "flex": 2,
+            "minWidth": 150
         }
+
     ]
     # Append dynamic column definitions for each week's SF, HCM, Delta (apply color coding based on Delta value)
     for week in range(start_iso_week, end_iso_week):
@@ -1263,7 +1271,7 @@ with tab4:
     with tab6:
         st.markdown("### Weekly Overview")
         # Add a new selectbox for comparison options
-        comparison_options = ['Comparison with start of the month (Sep 6)', 'Comparison with yesterday']
+        comparison_options = ['Comparison with start of the month (Oct 1)', 'Comparison with yesterday']
         selected_comparison = st.selectbox('Select Comparison:', comparison_options)
         
         metric_options = ['Shift Hours % change', 'Blocked Hours % change']
@@ -1314,9 +1322,9 @@ with tab4:
         weekly_aggregated_sep6 = weekly_aggregated_sep6.reset_index()
         
         # Adjust the logic to use different dataframes based on the comparison selection
-        if selected_comparison == 'Comparison with start of the month (Sep 6)':
+        if selected_comparison == 'Comparison with start of the month (Oct 1)':
             comparison_df = weekly_aggregated_sep6  # Assuming Sep 6 data is stored in weekly_aggregated_yesterday
-            comparison_label = 'Sep 6'
+            comparison_label = 'Oct 1'
         else:
             comparison_df = weekly_aggregated_yesterday  # Assuming yesterday's data is in weekly_aggregated_yesterday2
             comparison_label = 'Yesterday'
@@ -1527,7 +1535,7 @@ with tab4:
         fig = go.Figure()
 
         # Adjust the comparison label dynamically
-        comparison_label = 'Sep 6' if selected_comparison == 'Comparison with start of the month (Sep 6)' else 'Yesterday'
+        comparison_label = 'Oct 1' if selected_comparison == 'Comparison with start of the month (Oct 1)' else 'Yesterday'
 
         # Add bars for 'today' values
         fig.add_trace(go.Bar(
