@@ -204,20 +204,21 @@ yesterday_date = current_date - timedelta(days=1)
 today_file_name = f"shiftslots_{current_date.strftime('%Y-%m-%d')}.xlsx"
 yesterday_file_name = f"shiftslots_{yesterday_date.strftime('%Y-%m-%d')}.xlsx"
 sep6_file_name = f"shiftslots_{month_start_date.strftime('%Y-%m-%d')}.xlsx"
-
-# Step 2: Load today's data, fallback to yesterday if not found
 shift_slots = load_excel(today_file_name)
-
 if shift_slots is None:
     print("Today's file not found, trying yesterday's file...")
     shift_slots = load_excel(yesterday_file_name)
     
-    # Step 3: If yesterday's file is also not found, find the last working day
     if shift_slots is None:
-        print("Today's file not found, finding the last working day...")
+        print("Yesterday's file not found, finding the last working day...")
         last_working_day = find_last_working_day(current_date)
         last_working_day_file_name = f"shiftslots_{last_working_day.strftime('%Y-%m-%d')}.xlsx"
         shift_slots = load_excel(last_working_day_file_name)
+
+if shift_slots is None:
+    st.error("No file found for today, yesterday, or the last working day.")
+    st.stop()
+
 
 shift_slots_yesterday = load_excel(yesterday_file_name)
 

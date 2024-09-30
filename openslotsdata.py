@@ -614,8 +614,12 @@ appointments = appointments.drop_duplicates(subset=[
 appointments_filtered = appointments[(appointments['ApptStartTime'] >= start_date) & (appointments['ApptEndTime'] <= end_date)].copy()
 # First, create a dictionary to map PersonalNumber to Employee Full Name in sfshifts_merged
 resources.rename(columns={'Service Resource[GT_PersonalNumber__c]': 'PersonalNumber'}, inplace=True)
-personal_number_to_name = dict(zip(resources['PersonalNumber'], resources['Service Resource[Name]']))
-
+resources.columns
+personal_number_to_name = {
+    f"{resources['GT_ShopCode__c'][index]}_{personal_number}":resources['Service Resource[Name]'][index]
+    for index, personal_number in enumerate(resources['PersonalNumber'])
+}
+personal_number_to_name = dict(zip(resources['GT_ShopCode__c'], resources['PersonalNumber'], resources['Service Resource[Name]']))
 #Deleting unused DataFrames to free up memory
 del sfshifts, resources, appointments, absences
 
@@ -970,6 +974,16 @@ total_hours_per_employee_weekly = total_hours_per_employee.groupby(
     }).reset_index()
 
 total_hours_per_employee_weekly
+
+hcmmap_columns_to_string = {
+    'PersonalNumber HCM': str,
+    'ServiceResourceName SF': str,
+    'PersonalNumber SF': str,
+    'PersonalNumber': str
+}
+hcm_map = pd.read_excel('hcm_mapping.xlsx', engine='openpyxl', dtype=hcmmap_columns_to_string)
+
+
 hcm_file = 'HCMShifts.csv'
 hcm_columns_to_string = {
     'Shop[Shop Code - Descr]': str,
@@ -980,7 +994,23 @@ HCMdata = pd.read_csv(hcm_file, engine='python', dtype=hcm_columns_to_string, us
     'Shop[Shop Code - Descr]', 'Unique Employee[Employee Full Name]', 'Unique Employee[Employee Person Number]',
     'Calendar[ISO Week]', 'Calendar[ISO Year]', '[Audiologist_FTE]'
 ])
+# Filter HCMdata between start_iso_week and end_iso_week without considering the year
+HCMdata = HCMdata[
+    (HCMdata['Calendar[ISO Week]'] >= start_iso_week) &
+    (HCMdata['Calendar[ISO Week]'] <= end_iso_week)
+]
+
 HCMdata['ShopCode'] = HCMdata['Shop[Shop Code - Descr]'].str[:3]  # Extract the ShopCode_3char from CompositeKey
+HCMdata['ShopCode_pn'] = (HCMdata['ShopCode'] + '_' +  HCMdata['Unique Employee[Employee Person Number]'].astype(str))
+
+HCMdata = pd.merge(
+    HCMdata,
+    hcm_map[['PersonalNumber HCM', 'PersonalNumber', 'ServiceResourceName SF']],  # Include Region, Area, and Shop[Name]
+    left_on='ShopCode_pn',
+    right_on='PersonalNumber HCM',
+    how='left'
+)
+HCMdata.columns
 
 HCMdata = pd.merge(
     HCMdata,
@@ -992,18 +1022,9 @@ HCMdata = pd.merge(
 
 HCMdata = HCMdata[HCMdata['SYM']=='Y']
 
-# Filter HCMdata between start_iso_week and end_iso_week without considering the year
-HCMdata = HCMdata[
-    (HCMdata['Calendar[ISO Week]'] >= start_iso_week) &
-    (HCMdata['Calendar[ISO Week]'] <= end_iso_week)
-]
-# Create composite keys
-HCMdata.loc[:, 'ShopCode_3char'] = HCMdata['Shop[Shop Code - Descr]'].str[:3]
-
 # Create the 'CompositeKey' column using .loc as well
-HCMdata.loc[:, 'CompositeKey'] = (
-    HCMdata['ShopCode_3char'] + '_' + 
-    HCMdata['Unique Employee[Employee Person Number]'].astype(str) + '_' + 
+HCMdata.loc[:, 'CompositeKey'] = (HCMdata['ShopCode'].astype(str) + '_' +
+    HCMdata['PersonalNumber'].astype(str) + '_' + 
     HCMdata['Calendar[ISO Year]'].astype(str) + '_' + 
     HCMdata['Calendar[ISO Week]'].astype(str)
 )
@@ -1019,12 +1040,11 @@ HCMdata_summed = HCMdata.groupby(
     ['CompositeKey', 'Calendar[ISO Year]', 'Calendar[ISO Week]']
 ).agg({
     '[Audiologist_FTE]': 'sum',
-    'Unique Employee[Employee Full Name]': 'first',
-    'Unique Employee[Employee Person Number]' : 'first'
+    'PersonalNumber': 'first',
+    'ServiceResourceName SF' : 'first'
     }).reset_index()
 # Multiply the '[Audiologist_FTE]' by 40 to get the duration
 HCMdata_summed['Duración HCM'] = HCMdata_summed['[Audiologist_FTE]'] * 40
-HCMdata_summed
 # Step 3: Process SF shifts data
 shift_duration_per_week = sfshifts_merged.groupby(
     ['CompositeKey']
@@ -1036,21 +1056,15 @@ shift_duration_per_week
 # Step 4: Merge both datasets (without region/area/shop data yet)
 all_composite_keys = pd.merge(
     shift_duration_per_week[['CompositeKey', 'Duración SF']],  # From SF shifts
-    HCMdata_summed[['CompositeKey', 'Duración HCM',  'Unique Employee[Employee Full Name]', 'Unique Employee[Employee Person Number]']],  # From HCM data
-    on='CompositeKey', how='outer'
+    HCMdata_summed[['CompositeKey', 'Duración HCM', 'PersonalNumber','ServiceResourceName SF']],  # From HCM data
+    on='CompositeKey', how='outer', indicator=True
 )
 
-all_composite_keys = pd.merge(
-    total_hours_per_employee_weekly[['CompositeKey', 'hours_worked']],  # From clockinout 
-    all_composite_keys[['CompositeKey', 'Duración HCM',  'Duración SF', 'Unique Employee[Employee Full Name]', 'Unique Employee[Employee Person Number]']],  # From HCM data
-    on='CompositeKey', how='outer'
-)
 # Step 5: Add region, area, and shop (DESCR) mapping data based on the merged composite keys
 all_composite_keys['ShopCode_3char'] = all_composite_keys['CompositeKey'].str[:3]  # Extract the ShopCode_3char from CompositeKey
-all_composite_keys['PersonalNumber'] = all_composite_keys['CompositeKey'].apply(lambda x: x.split('_')[1])
+all_composite_keys['shop_pn'] = all_composite_keys['CompositeKey'].str[:-8]
 all_composite_keys['iso_week'] = all_composite_keys['CompositeKey'].apply(lambda x: x.split('_')[-1])
 sfshifts_merged['PersonalNumber']= sfshifts_merged['PersonalNumberKey'].apply(lambda x: x.split('_')[1])
-all_composite_keys
 # Merge with the region_mapping to add the 'REGION', 'AREA', and 'DESCR' (Shop Name)
 all_composite_keys = pd.merge(
     all_composite_keys,
@@ -1060,41 +1074,27 @@ all_composite_keys = pd.merge(
     how='left'
 )
 all_composite_keys.columns
-all_composite_keys[all_composite_keys['PersonalNumber']=='41959']
 # Step 1: Create 'Resource Name' by mapping 'PersonalNumber' using the function
-all_composite_keys['Resource Name'] = all_composite_keys['PersonalNumber'].map(personal_number_to_name)
-
-# Step 2: Fill NaN values in 'Resource Name' by handling the case where 'Unique Employee[Employee Person Number]' needs to be corrected
-def map_resource_name(row):
-    # If 'Resource Name' is NaN
-    if pd.isna(row['Resource Name']):
-        # Step 2.1: Check if 'Unique Employee[Employee Full Name]' exists in the mapping function (handle mismatched 'PersonalNumber')
-        corrected_person_number = row['Unique Employee[Employee Person Number]'].lstrip('0')  # Strip leading zeros
-        if corrected_person_number in personal_number_to_name:
-            return personal_number_to_name[corrected_person_number]
-        else:
-            # Step 2.2: If still NaN, return 'Unique Employee[Employee Full Name]'
-            return row['Unique Employee[Employee Full Name]'] or row['Unique Employee[Employee Person Number]']
-    # Return the already mapped 'Resource Name'
-    return row['Resource Name']
-
-# Step 3: Apply the mapping function to fill missing 'Resource Name'
-all_composite_keys['Resource Name'] = all_composite_keys.apply(map_resource_name, axis=1)
-
+all_composite_keys = pd.merge(
+    all_composite_keys,
+    hcm_map[['PersonalNumber HCM', 'PersonalNumber', 'ServiceResourceName SF']],  # Include Region, Area, and Shop[Name]
+    left_on='shop_pn',
+    right_on='PersonalNumber HCM',
+    how='left'
+)
 # Optional: Verify if there are still any NaNs in 'Resource Name'
-print(all_composite_keys['Resource Name'].isna().sum())
+print(all_composite_keys['ServiceResourceName SF'].isna().sum())
 
 all_composite_keys.head()
 # Step 6: Final Calculations and Fill Missing Values
 all_composite_keys['Diferencia de hcm duración'] = all_composite_keys['Duración HCM'].fillna(0) - all_composite_keys['Duración SF'].fillna(0)
-all_composite_keys['Diferencia de act duración'] = all_composite_keys['hours_worked'].fillna(0) - all_composite_keys['Duración SF'].fillna(0)
 all_composite_keys
 missing_region_rows = all_composite_keys[all_composite_keys['REGION'].isna()]
 print(missing_region_rows)
 
 all_composite_keys.rename(columns={
     'CompositeKey': 'Clave compuesta',
-    'hours_worked': 'Duración ACT', 
+    'ServiceResourceName SF': 'Resource Name',
     'ShopCode_3char': 'Shop Code',
     'CODE': 'Code',
     'REGION': 'Region',
@@ -1110,11 +1110,10 @@ missing_region_rows['Shop Code'].unique()
 all_composite_keys = all_composite_keys[all_composite_keys['Region'].notna()]
 all_composite_keys
 # Fill NaN values in the following columns with 0
-all_composite_keys[['Duración ACT', 'Duración SF', 'Duración HCM', 'Diferencia de hcm duración', 'Diferencia de act duración']] = all_composite_keys[['Duración ACT', 'Duración SF', 'Duración HCM', 'Diferencia de hcm duración', 'Diferencia de act duración']].fillna(0)
+all_composite_keys[['Duración SF', 'Duración HCM', 'Diferencia de hcm duración']] = all_composite_keys[['Duración SF', 'Duración HCM', 'Diferencia de hcm duración']].fillna(0)
 # Normalize 'Resource_Name' column to capitalize the first letter of each word
 # Find the duplicated rows based on 'Resource_Name' and 'iso_week'
 duplicates = all_composite_keys[all_composite_keys.duplicated(subset=['Resource Name', 'iso_week'], keep=False)]
-all_composite_keys.columns
 # Display the first few rows of the duplicates
 print(duplicates.head())
 duplicates.to_excel('duplicates.xlsx', index=False, engine='openpyxl')
