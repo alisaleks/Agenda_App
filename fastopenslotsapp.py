@@ -769,8 +769,8 @@ with tab4:
             }
 
             // Default behavior for non-total rows
-            var deltaField = params.colDef.field.replace('Duración_SF', 'Diferencia_de_duración')
-                                                .replace('Duración_HCM', 'Diferencia_de_duración');
+            var deltaField = params.colDef.field.replace('Duración_SF', 'Diferencia_de_hcm_duración')
+                                                .replace('Duración_HCM', 'Diferencia_de_hcm_duración');
             var deltaValue = params.data[deltaField];
             if (deltaValue === 0) {
                 return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for Delta = 0
