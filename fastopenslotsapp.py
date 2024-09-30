@@ -1,4 +1,5 @@
 import sys
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -176,9 +177,6 @@ def get_last_iso_week_end_date_current_month():
 start_date = get_first_iso_week_start_date_current_month()
 end_date = get_last_iso_week_end_date_current_month()
 
-print(f"The start date of the 1st ISO week of the current month (excluding Sunday start) is: {start_date}")
-print(f"The end date of the last ISO week of the current month is: {end_date}")
-
 start_iso_year, start_iso_week, _ = start_date.isocalendar()
 end_iso_year, end_iso_week, _ = end_date.isocalendar()
 current_iso_year, current_iso_week, _ = datetime.now().isocalendar()
@@ -203,6 +201,7 @@ yesterday_date = current_date - timedelta(days=1)
 today_file_name = f"shiftslots_{current_date.strftime('%Y-%m-%d')}.xlsx"
 yesterday_file_name = f"shiftslots_{yesterday_date.strftime('%Y-%m-%d')}.xlsx"
 sep6_file_name = f"shiftslots_{month_start_date.strftime('%Y-%m-%d')}.xlsx"
+
 shift_slots = load_excel(today_file_name)
 if shift_slots is None:
     print("Today's file not found, trying yesterday's file...")
@@ -231,7 +230,6 @@ hcp_shift_slots = load_excel('hcpshiftslots.xlsx')
 hcm = load_excel('hcm_sf_merged.xlsx')
 # Assuming `shift_slots['iso_week']` is a list of ISO weeks
 available_weeks = sorted(shift_slots['iso_week'].unique())
-
 # Find the index of the current ISO week in the list
 if current_iso_week in available_weeks:
     current_week_index = available_weeks.index(current_iso_week)
