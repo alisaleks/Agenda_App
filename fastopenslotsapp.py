@@ -198,7 +198,6 @@ def get_start_and_end_of_current_month():
 
 # Example usage to get the start and end dates of the current month
 month_start_date, month_end_date = get_start_and_end_of_current_month()
-
 current_date = datetime.now()
 yesterday_date = current_date - timedelta(days=1)
 today_file_name = f"shiftslots_{current_date.strftime('%Y-%m-%d')}.xlsx"
@@ -218,7 +217,6 @@ if shift_slots is None:
 if shift_slots is None:
     st.error("No file found for today, yesterday, or the last working day.")
     st.stop()
-
 
 shift_slots_yesterday = load_excel(yesterday_file_name)
 
