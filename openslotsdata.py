@@ -898,82 +898,6 @@ output_file_path2 = 'hcpshiftslots.xlsx'
 sfshifts_merged.to_excel(output_file_path2, index=False, engine='openpyxl')
 
 
-
-clock = '1039467394_4_1_1_ .xlsx'
-# Load the Excel file, skipping the first 4 rows and using the 5th row as headers
-clock = pd.read_excel(clock, header=6)
-clock['ID RH'] = clock['ID RH'].astype(str).str.strip()
-clock = clock[clock['Nombre puesto'] != 'COUNTRY CLIENT ADVISOR']
-clock = clock[clock['ID RH'] != '52363']
-clock = clock[clock['ID RH'] != '41959']
-
-clock[clock['ID RH'] == '41959']
-
-# Assuming 'df' is the DataFrame and 'Id.Empleado' is the column to check for duplicates
-duplicates = clock[clock.duplicated(subset='ID RH', keep=False)]
-
-# Display the duplicate rows
-print(duplicates)
-
-clock.columns
-# Step 1: Ensure that the 'Fecha y hora fichaje' column is in datetime format
-clock['Fecha y hora fichaje'] = pd.to_datetime(clock['Fecha y hora fichaje/declarac.'])
-
-# Step 2: Sort the data by 'Id.Empleado' (ID RH) and 'Fecha y hora fichaje'
-clock_sorted = clock.sort_values(by=['ID RH', 'Fecha y hora fichaje'])
-
-# Step 3: Assign alternating "Clock In" and "Clock Out" labels within each group of 'ID RH'
-clock_sorted['clock_type'] = clock_sorted.groupby('ID RH').cumcount() % 2
-clock_sorted['clock_type'] = clock_sorted['clock_type'].map({0: 'Clock In', 1: 'Clock Out'})
-clock_sorted
-# Step 4: Calculate the time difference only for "Clock In" and the next "Clock Out"
-# Shift the 'Fecha y hora fichaje' column to calculate time difference for Clock In to next Clock Out
-clock_sorted['next_fichaje'] = clock_sorted.groupby('ID RH')['Fecha y hora fichaje'].shift(-1)
-clock_sorted['time_diff'] = clock_sorted['next_fichaje'] - clock_sorted['Fecha y hora fichaje']
-
-# Step 5: Keep only the rows that are "Clock In" to calculate working hours
-clock_in = clock_sorted[clock_sorted['clock_type'] == 'Clock In'].copy()
-
-# Step 6: Convert time differences to hours (optional)
-clock_in['hours_worked'] = clock_in['time_diff'].dt.total_seconds() / 3600
-
-clock_in['Shop Name'] = clock_in['Nombre unidad org.'].str.replace('ES - SHOP - ', '', regex=False)
-clock_in['Shop Name'] = clock_in['Shop Name'].str.strip()
-clock_in['Shop Name'] = clock_in['Shop Name'].replace("L’HOSPITALET DE LLOBREGAT - JUST OLIVERES", "L'HOSPITALET DE LLOBREGAT - JUST OLIVERES")
-# Filter out rows where 'Nombre puesto' is 'COUNTRY CLIENT ADVISOR'
-
-clock_in[clock_in['ID RH'] == '52363']
-
-
-# Step 2: Calculate total hours worked per employee and include 'Shop Name'
-total_hours_per_employee = clock_in.groupby('ID RH').agg({
-    'hours_worked': 'sum',
-    'Fecha y hora fichaje': 'first',
-    'Shop Name': 'first'
-}).reset_index()
-
-total_hours_per_employee = pd.merge(
-    total_hours_per_employee,
-    region_mapping[['CODE', 'REGION', 'AREA', 'DESCR','SYM']],  # Include Region, Area, and Shop[Name]
-    left_on='Shop Name',
-    right_on='DESCR',
-    how='left'
-)
-print(total_hours_per_employee[total_hours_per_employee['Shop Name'] == "L'HOSPITALET DE LLOBREGAT - JUST OLIVERES"])
-total_hours_per_employee=total_hours_per_employee[total_hours_per_employee['SYM']=='Y']
-total_hours_per_employee['ISO Year'] = total_hours_per_employee['Fecha y hora fichaje'].dt.isocalendar().year
-total_hours_per_employee['ISO Week'] = total_hours_per_employee['Fecha y hora fichaje'].dt.isocalendar().week
-total_hours_per_employee['CompositeKey'] = total_hours_per_employee['CODE'] + '_' + total_hours_per_employee['ID RH'].astype(str) + '_' + total_hours_per_employee['ISO Year'].astype(str) + '_' + total_hours_per_employee['ISO Week'].astype(str)
-
-total_hours_per_employee_weekly = total_hours_per_employee.groupby(
-    ['CompositeKey', 'ISO Year', 'ISO Week']
-).agg({
-    'hours_worked': 'sum',
-    'ID RH': 'first'
-    }).reset_index()
-
-total_hours_per_employee_weekly
-
 hcmmap_columns_to_string = {
     'PersonalNumber HCM': str,
     'ServiceResourceName SF': str,
@@ -1002,6 +926,7 @@ HCMdata = HCMdata[
 
 HCMdata['ShopCode'] = HCMdata['Shop[Shop Code - Descr]'].str[:3]  # Extract the ShopCode_3char from CompositeKey
 HCMdata['ShopCode_pn'] = (HCMdata['ShopCode'] + '_' +  HCMdata['Unique Employee[Employee Person Number]'].astype(str))
+hcm_map = hcm_map.drop_duplicates(subset=['PersonalNumber HCM', 'PersonalNumber', 'ServiceResourceName SF'])
 
 HCMdata = pd.merge(
     HCMdata,
@@ -1010,6 +935,10 @@ HCMdata = pd.merge(
     right_on='PersonalNumber HCM',
     how='left'
 )
+
+aihoa = HCMdata[HCMdata['PersonalNumber']=='34521']
+print(aihoa[[ 'PersonalNumber', '[Audiologist_FTE]', 'Calendar[ISO Week]']])
+
 # Check if 'PersonalNumber' or 'ServiceResourceName SF' are NaN
 # If 'PersonalNumber' is NaN, input the value from 'Unique Employee[Employee Person Number]'
 HCMdata['PersonalNumber'] = HCMdata['PersonalNumber'].fillna(HCMdata['Unique Employee[Employee Person Number]'])
@@ -1032,6 +961,8 @@ HCMdata = pd.merge(
 )
 
 HCMdata = HCMdata[HCMdata['SYM']=='Y']
+
+
 missing_rows = HCMdata[HCMdata['ServiceResourceName SF'].isna()][['ShopCode_pn', 'PersonalNumber', 'ServiceResourceName SF']]
 # Create the 'CompositeKey' column using .loc as well
 HCMdata.loc[:, 'CompositeKey'] = (HCMdata['ShopCode'].astype(str) + '_' +
@@ -1053,7 +984,7 @@ HCMdata_summed = HCMdata.groupby(
     'PersonalNumber': 'first',
     'ServiceResourceName SF' : 'first'
     }).reset_index()
-
+HCMdata_summed.head()
 # Multiply the '[Audiologist_FTE]' by 40 to get the duration
 HCMdata_summed['Duración HCM'] = HCMdata_summed['[Audiologist_FTE]'] * 40
 
@@ -1135,3 +1066,106 @@ all_composite_keys.columns
 # Step 7: Save the result to Excel
 output_file_path1 = 'hcm_sf_merged.xlsx'
 all_composite_keys.to_excel(output_file_path1, index=False, engine='openpyxl')
+
+#Clock-in-out
+clock = '1039467394_4_1_1_ .xlsx'
+# Load the Excel file, skipping the first 4 rows and using the 5th row as headers
+clock = pd.read_excel(clock, header=6)
+clock['ID RH'] = clock['ID RH'].astype(str).str.strip()
+clock = clock[clock['Nombre puesto'] != 'COUNTRY CLIENT ADVISOR']
+clock = clock[clock['ID RH'] != '52363']
+clock = clock[clock['ID RH'] != '41959']
+
+clock[clock['ID RH'] == '41959']
+
+# Assuming 'df' is the DataFrame and 'Id.Empleado' is the column to check for duplicates
+duplicates = clock[clock.duplicated(subset='ID RH', keep=False)]
+
+# Display the duplicate rows
+print(duplicates)
+
+# Step 1: Ensure that the 'Fecha y hora fichaje' column is in datetime format
+clock['Fecha y hora fichaje'] = pd.to_datetime(clock['Fecha y hora fichaje/declarac.'])
+
+# Step 2: Sort the data by 'Id.Empleado' (ID RH) and 'Fecha y hora fichaje'
+clock_sorted = clock.sort_values(by=['ID RH', 'Fecha y hora fichaje'])
+
+# Step 3: Assign alternating "Clock In" and "Clock Out" labels within each group of 'ID RH'
+clock_sorted['clock_type'] = clock_sorted.groupby('ID RH').cumcount() % 2
+clock_sorted['clock_type'] = clock_sorted['clock_type'].map({0: 'Clock In', 1: 'Clock Out'})
+clock_sorted
+# Step 4: Calculate the time difference only for "Clock In" and the next "Clock Out"
+# Shift the 'Fecha y hora fichaje' column to calculate time difference for Clock In to next Clock Out
+clock_sorted['next_fichaje'] = clock_sorted.groupby('ID RH')['Fecha y hora fichaje'].shift(-1)
+clock_sorted['time_diff'] = clock_sorted['next_fichaje'] - clock_sorted['Fecha y hora fichaje']
+
+# Step 5: Keep only the rows that are "Clock In" to calculate working hours
+clock_in = clock_sorted[clock_sorted['clock_type'] == 'Clock In'].copy()
+
+# Step 6: Convert time differences to hours (optional)
+clock_in['hours_worked'] = clock_in['time_diff'].dt.total_seconds() / 3600
+
+clock_in['Shop Name'] = clock_in['Nombre unidad org.'].str.replace('ES - SHOP - ', '', regex=False)
+clock_in['Shop Name'] = clock_in['Shop Name'].str.strip()
+clock_in['Shop Name'] = clock_in['Shop Name'].replace("L’HOSPITALET DE LLOBREGAT - JUST OLIVERES", "L'HOSPITALET DE LLOBREGAT - JUST OLIVERES")
+# Filter out rows where 'Nombre puesto' is 'COUNTRY CLIENT ADVISOR'
+
+clock_in[clock_in['ID RH'] == '52363']
+
+
+# Step 2: Calculate total hours worked per employee and include 'Shop Name'
+total_hours_per_employee = clock_in.groupby('ID RH').agg({
+    'hours_worked': 'sum',
+    'Fecha y hora fichaje': 'first',
+    'Shop Name': 'first'
+}).reset_index()
+
+total_hours_per_employee = pd.merge(
+    total_hours_per_employee,
+    region_mapping[['CODE', 'REGION', 'AREA', 'DESCR','SYM']],  # Include Region, Area, and Shop[Name]
+    left_on='Shop Name',
+    right_on='DESCR',
+    how='left'
+)
+print(total_hours_per_employee[total_hours_per_employee['Shop Name'] == "L'HOSPITALET DE LLOBREGAT - JUST OLIVERES"])
+total_hours_per_employee=total_hours_per_employee[total_hours_per_employee['SYM']=='Y']
+total_hours_per_employee['ISO Year'] = total_hours_per_employee['Fecha y hora fichaje'].dt.isocalendar().year
+total_hours_per_employee['ISO Week'] = total_hours_per_employee['Fecha y hora fichaje'].dt.isocalendar().week
+total_hours_per_employee['CompositeKey'] = total_hours_per_employee['CODE'] + '_' + total_hours_per_employee['ID RH'].astype(str) + '_' + total_hours_per_employee['ISO Year'].astype(str) + '_' + total_hours_per_employee['ISO Week'].astype(str)
+total_hours_per_employee['PersonalNumberKey'] = total_hours_per_employee['CODE'] + '_' + total_hours_per_employee['ID RH'].astype(str)
+total_hours_per_employee['Fecha y hora fichaje'] = pd.to_datetime(total_hours_per_employee['Fecha y hora fichaje'])
+total_hours_per_employee['Date'] = total_hours_per_employee['Fecha y hora fichaje'].dt.date
+
+total_hours_per_employee_weekly = total_hours_per_employee.groupby(
+    ['CompositeKey', 'ISO Year', 'ISO Week']
+).agg({
+    'hours_worked': 'sum',
+    'ID RH': 'first'
+    }).reset_index()
+
+total_hours_per_employee_daily = total_hours_per_employee.groupby(
+    ['Date', 'PersonalNumberKey'], as_index=False
+).agg({
+    'hours_worked': 'sum',  # Summing the hours worked per day
+    'ID RH': 'first',       
+    'Shop Name': 'first',   
+    'CODE': 'first',        
+    'REGION': 'first',
+    'AREA': 'first',
+    'DESCR': 'first',
+    'SYM': 'first'
+})
+
+print(total_hours_per_employee_daily.head())
+total_hours_per_employee_daily['Date'] = pd.to_datetime(total_hours_per_employee_daily['Date']).dt.date
+sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate']).dt.date
+# Step 4: Merge both datasets (without region/area/shop data yet)
+clockin_merged = pd.merge(
+    total_hours_per_employee_daily[['PersonalNumberKey', 'Date', 'hours_worked', 'ID RH', 'Shop Name', 'CODE', 'REGION', 'AREA', 'DESCR']], 
+    sfshifts_merged[['PersonalNumberKey', 'ShiftDate', 'ShiftDurationHours', 'GT_ServiceResource__r.Name', 'PersonalidKey', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']],
+    left_on=['PersonalNumberKey', 'Date'],    
+    right_on=['PersonalNumberKey', 'ShiftDate'], 
+    how='outer', 
+    suffixes=('_sf', '_act'), 
+    indicator=True 
+)

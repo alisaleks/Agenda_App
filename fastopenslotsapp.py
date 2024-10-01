@@ -825,7 +825,7 @@ with tab4:
 
     ]
     # Append dynamic column definitions for each week's SF, HCM, Delta (apply color coding based on Delta value)
-    for week in range(start_iso_week, end_iso_week):
+    for week in range(start_iso_week, end_iso_week+1):
         columnDefs.append({
             "headerName": f"Week {week}",
             "children": [
