@@ -247,11 +247,11 @@ duplicates = shifts_filtered[shifts_filtered.duplicated(subset=['Key'], keep=Fal
 shifts_filtered = shifts_filtered.sort_values(by=['Key', 'LastModifiedDate'], ascending=[True, False])
 shifts_filtered = shifts_filtered.drop_duplicates(subset=['Key'], keep='first')
 shifts_filtered['ShiftDurationHours'] = (shifts_filtered['EndTime'] - shifts_filtered['StartTime']).dt.total_seconds() / 3600
-shifts_filtered[(shifts_filtered['GT_ShopCode__c'] == '81C') & (shifts_filtered['date'] == '18/09/2024')].head(100)
+shifts_filtered[(shifts_filtered['GT_ShopCode__c'] == '022') & (shifts_filtered['date'] == '02/10/2024')].head(100)
 shifts_filtered['ShopResourceKey'] = shifts_filtered['GT_ShopCode__c'] + shifts_filtered['Shift[ServiceResourceId]']
 resources['ShopResourceKey'] = resources['GT_ShopCode__c'] + resources['Service Territory Member[ServiceResourceId]']
 
-check = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '969_25367') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-09-02')]
+check = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '022_40211') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-10-02')]
 check
 # Step 1: Convert 'EffectiveStartDate' to datetime
 resources['EffectiveStartDate'] = pd.to_datetime(resources['Service Territory Member[EffectiveStartDate]'], errors='coerce')
@@ -282,7 +282,7 @@ shifts_filtered = shifts_filtered[(shifts_filtered['Service Resource[IsActive]']
 shifts_filtered = shifts_filtered.drop_duplicates(subset=['UniqueShiftKey'])
 
 # Step 9: Check the filtered data for 'PersonalNumberKey' and 'ShiftDate'
-check = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '969_25367') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-09-02')]
+check = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '022_40211') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-10-02')]
 
 print(check)
 
@@ -364,12 +364,15 @@ absences_grouped = expanded_absences.groupby(['PersonalNumberKey', 'AbsenceDate'
     'AbsenceStartTime': 'first',
     'AbsenceEndTime': 'last'
 }).reset_index()
-absences_grouped[(absences_grouped['Resource.GT_PersonalNumber__c'] == '25521')].head(25)
-
+absences_grouped[(absences_grouped['Resource.GT_PersonalNumber__c'] == '33104')].head(25)
+check= shifts_filtered[shifts_filtered['PersonalNumberKey'] == '022_33104']
+check[[ 'ShiftDate','StartDateHour', 'Key', 'ShiftDurationHours', 'ShopResourceKey', 'Service Resource[IsActive]']]
+shifts_filtered.head()
 # Group shifts by PersonalNumberKey and ShiftDate to find total shift hours per day per resource
-shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate', 'Shift[Label]']).agg({
+shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate']).agg({
     'ShiftDurationHours': 'sum',  # Sum of absence duration hours
     'Service Resource[GT_Role__c]' : 'first', 
+    'Shift[Label]' : 'first',
     'GT_ServiceResource__r.Name' : 'first',
     'GT_ShopCode__c': 'first',
     'ShopResourceKey': 'first',  
@@ -389,9 +392,9 @@ shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate', 'Shi
     'EndTime': 'last'
     
 }).reset_index()
-
-check= shifts_grouped[shifts_grouped['PersonalNumberKey'] == '010_43978']
-check
+shifts_grouped.head()
+check= shifts_grouped[shifts_grouped['PersonalNumberKey'] == '022_33104']
+check[['PersonalNumberKey', 'ShiftDate', 'ShiftDurationHours','StartTime', 'EndTime']]
 # Step 1: Initialize an empty list to store expanded shifts
 shift_slots_5mins = []
 # Step 2: Loop through each row in sfshifts_merged and generate 5-minute slots
@@ -704,7 +707,7 @@ overlapping_absence_slots = pd.merge(
 )
 overlapping_absence_slots.columns
 appointments_with_shifts_and_absences[(appointments_with_shifts_and_absences['GT_ShopCode__c'] == '25018')].tail()
-target_date = pd.to_datetime('2024-09-23')
+target_date = pd.to_datetime('2024-10-23')
 absences_example = overlapping_absence_slots[
     (overlapping_absence_slots['PersonalidKey'] == '0100Hn67000000PNF9CAO') & 
     (overlapping_absence_slots['AbsenceSlot'].dt.date == target_date.date())
@@ -1209,6 +1212,8 @@ clockin_merged.rename(columns={
 clockin_merged.drop(columns=['GT_ServiceResource__r.Name', 'ServiceResourceName SF', '_merge', 'SYM'], inplace=True)
 clockin_merged['Diferencia de act duración'] = clockin_merged['ShiftDurationHours'].fillna(0) - clockin_merged['hours_worked'].fillna(0)
 
+clockin_merged = clockin_merged.drop_duplicates(subset=['PersonalNumberKey', 'Date'])
+duplicates = clockin_merged[clockin_merged.duplicated(subset=['PersonalNumberKey', 'Date'])]
+duplicates
 output_file_path3 = 'clock.xlsx'
 clockin_merged.to_excel(output_file_path3, index=False, engine='openpyxl')
-clockin_merged.columns
