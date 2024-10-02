@@ -939,7 +939,6 @@ HCMdata = pd.merge(
 aihoa = HCMdata[HCMdata['PersonalNumber']=='34521']
 print(aihoa[[ 'PersonalNumber', '[Audiologist_FTE]', 'Calendar[ISO Week]']])
 
-# Check if 'PersonalNumber' or 'ServiceResourceName SF' are NaN
 # If 'PersonalNumber' is NaN, input the value from 'Unique Employee[Employee Person Number]'
 HCMdata['PersonalNumber'] = HCMdata['PersonalNumber'].fillna(HCMdata['Unique Employee[Employee Person Number]'])
 
@@ -1029,7 +1028,7 @@ missing_rl = all_composite_keys[all_composite_keys['Personal Number']=='51180']
 print(missing_rl[[ 'Personal Number', 'Resource Name', 'CompositeKey']])
 
 # Step 6: Final Calculations and Fill Missing Values
-all_composite_keys['Diferencia de hcm duración'] = all_composite_keys['Duración HCM'].fillna(0) - all_composite_keys['Duración SF'].fillna(0)
+all_composite_keys['Diferencia de hcm duración'] = all_composite_keys['Duración SF'].fillna(0) - all_composite_keys['Duración HCM'].fillna(0)
 
 all_composite_keys = pd.merge(
     all_composite_keys,
@@ -1161,11 +1160,55 @@ total_hours_per_employee_daily['Date'] = pd.to_datetime(total_hours_per_employee
 sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate']).dt.date
 # Step 4: Merge both datasets (without region/area/shop data yet)
 clockin_merged = pd.merge(
-    total_hours_per_employee_daily[['PersonalNumberKey', 'Date', 'hours_worked', 'ID RH', 'Shop Name', 'CODE', 'REGION', 'AREA', 'DESCR']], 
-    sfshifts_merged[['PersonalNumberKey', 'ShiftDate', 'ShiftDurationHours', 'GT_ServiceResource__r.Name', 'PersonalidKey', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']],
+    total_hours_per_employee_daily[['PersonalNumberKey', 'Date', 'hours_worked']], 
+    sfshifts_merged[['PersonalNumberKey', 'GT_ServiceResource__r.Name', 'ShiftDate', 'ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']],
     left_on=['PersonalNumberKey', 'Date'],    
     right_on=['PersonalNumberKey', 'ShiftDate'], 
     how='outer', 
     suffixes=('_sf', '_act'), 
     indicator=True 
 )
+clockin_merged['PersonalNumber'] = clockin_merged['PersonalNumberKey'].str[4:]
+clockin_merged['ShopCode'] = clockin_merged['PersonalNumberKey'].str[:3]
+clockin_merged.head()
+clockin_merged = pd.merge(
+    clockin_merged,
+    hcm_map[['PersonalNumber', 'ServiceResourceName SF']],
+    left_on='PersonalNumber',
+    right_on='PersonalNumber',
+    how='left'
+)
+
+clockin_merged = pd.merge(
+    clockin_merged,
+    region_mapping[['CODE', 'AREA','REGION', 'DESCR','SYM']],  # Include Region, Area, and Shop[Name]
+    left_on='ShopCode',
+    right_on='CODE',
+    how='left'
+)
+clockin_merged = clockin_merged[clockin_merged['SYM']=='Y']
+clockin_merged[[ 'hours_worked','ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']] = clockin_merged[['hours_worked','ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']].fillna(0)
+# Now you can check for missing values again if needed
+clockin_merged['Resource Name'] = clockin_merged['ServiceResourceName SF'].fillna(clockin_merged['GT_ServiceResource__r.Name'])
+clockin_merged['Resource Name'] = clockin_merged['Resource Name'].str.title()
+clockin_merged['Date'] = clockin_merged['Date'].fillna(clockin_merged['ShiftDate'])
+clockin_merged['Date'] = pd.to_datetime(clockin_merged['Date'])
+clockin_merged['weekday'] = clockin_merged['Date'].dt.day_name()
+clockin_merged['iso_week'] = clockin_merged['Date'].dt.isocalendar().week
+
+missing_rows_after_fill = clockin_merged[clockin_merged['ServiceResourceName SF'].isna()]
+missing_rows_after_fill
+clockin_merged.columns
+clockin_merged.rename(columns={
+    'ShopCode': 'Shop Code',
+    'CODE': 'Code',
+    'REGION': 'Region',
+    'AREA': 'Area',
+    'DESCR':'Shop[Name]',
+}, inplace=True)
+clockin_merged.drop(columns=['GT_ServiceResource__r.Name', 'ServiceResourceName SF', '_merge', 'SYM'], inplace=True)
+clockin_merged['Diferencia de act duración'] = clockin_merged['ShiftDurationHours'].fillna(0) - clockin_merged['hours_worked'].fillna(0)
+
+output_file_path3 = 'clock.xlsx'
+clockin_merged.to_excel(output_file_path3, index=False, engine='openpyxl')
+clockin_merged.columns

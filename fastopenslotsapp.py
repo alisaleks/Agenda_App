@@ -228,6 +228,7 @@ if shift_slots_yesterday is None:
 shift_slots_sep6 = load_excel(sep6_file_name)
 hcp_shift_slots = load_excel('hcpshiftslots.xlsx')
 hcm = load_excel('hcm_sf_merged.xlsx')
+clock= load_excel('clock.xlsx')
 # Assuming `shift_slots['iso_week']` is a list of ISO weeks
 available_weeks = sorted(shift_slots['iso_week'].unique())
 # Find the index of the current ISO week in the list
@@ -348,6 +349,8 @@ weekly_shift_sep6 = filter_hcp_shift_slots(shift_slots_sep6, selected_region, se
 
 # Apply the filters to HCM data (without iso_week filter)
 filtered_hcm = filter_hcm_data(hcm, selected_region, selected_area, selected_shop)
+filtered_clock = filter_data(clock,iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
+
 # Check if filtered data is empty after applying the filters
 if filtered_data.empty:
     st.warning("No shops found for the selected filter criteria.")
@@ -356,6 +359,8 @@ if filtered_hcp_shift_slots.empty:
     st.warning("No shops found for the selected filter criteria.")
 if filtered_hcm.empty:
     st.warning("No shops found for the selected filter criteria.")
+if filtered_clock.empty:
+    st.warning("No shops found for the selected filter criteria.")    
 if weekly_shift_slots.empty:
     st.warning("No shops found for the selected filter criteria.")
 if weekly_shift_slots_yesterday.empty:
@@ -419,7 +424,7 @@ hcp_data = filtered_hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceRes
     BlockedHours=('AbsenceDurationHours', 'sum'),
 ).reset_index()
 
-tab6, tab1, tab2, tab4, tab5 = st.tabs(["Weekly Change Analysis", "Open Hours / Total Hours", "Blocked Hours %", "HCM vs SF", "REX"])
+tab6, tab1, tab2,tab4, tab3,tab5 = st.tabs(["Weekly Change Analysis", "Open Hours / Total Hours", "Blocked Hours %", "HCM vs SF", "ACT vs SF","REX"])
 
 with tab1:    
     st.markdown(''':green[ *****Total Hours***: Todos los turnos configurados*]''')
@@ -897,6 +902,185 @@ with tab4:
         width='100%',
         theme='streamlit',
         custom_css=custom_css  # Apply custom CSS
+    )
+with tab3:
+    # Pivot the table for Tab 3
+    pivot_table_tab3 = filtered_clock.pivot_table(
+        index=['Resource Name', 'Shop[Name]'],
+        columns=['Date', 'weekday'],
+        values=['hours_worked', 'ShiftDurationHours', 'Diferencia de act duración'],
+        aggfunc='sum',
+        fill_value=0
+    )
+
+    # Flatten the columns (removing 'Day' and aligning with the other tab)
+    pivot_table_tab3.columns = [
+        f"{col[0]}_{col[1].strftime('%Y-%m-%d')} {col[2]}" for col in pivot_table_tab3.columns.to_flat_index()
+    ] 
+    pivot_table_tab3_reset = pivot_table_tab3.reset_index()
+    # Format all numeric columns to one decimal point
+    numeric_columns_in_pivot_tab3 = [col for col in pivot_table_tab3_reset.columns if 'hours_worked' in col or 'ShiftDurationHours' in col or 'Diferencia de act duración' in col]
+    pivot_table_tab3_reset[numeric_columns_in_pivot_tab3] = pivot_table_tab3_reset[numeric_columns_in_pivot_tab3].round(1)
+
+    # Create the DataFrame for AgGrid
+    df_tab3 = pivot_table_tab3_reset
+
+    # Ensure no spaces in field names, replace spaces with underscores
+    df_tab3.columns = [col.replace(' ', '_') for col in df_tab3.columns]
+
+    js_code = JsCode("""
+        function(params) {
+            // Check if the current row is the totals row by comparing the 'Shop_Name' field
+            if (params.data['Resource_Name'] === 'Total') {
+                var totalValue = params.value;
+                var styles = {'fontWeight': 'bold'};  // Make text bold
+                
+                if (totalValue === 0) {
+                    styles['backgroundColor'] = '#e0e0e0';
+                    styles['color'] = 'white';
+                } else if (totalValue > -3 && totalValue < 3) {
+                    styles['backgroundColor'] = '#e0e0e0';
+                    styles['color'] = 'black';
+                } else {
+                    styles['backgroundColor'] = '#e0e0e0';
+                    styles['color'] = 'black';
+                }
+                return styles;
+            }
+
+            var deltaField = params.colDef.field.replace('ShiftDurationHours', 'Diferencia_de_act_duración')
+                                                .replace('hours_worked', 'Diferencia_de_act_duración');
+            var deltaValue = params.data[deltaField];
+            if (deltaValue === 0) {
+                return {'backgroundColor': '#95cd41', 'color': 'black'};
+            } else if (deltaValue > -3 && deltaValue < 3) {
+                return {'backgroundColor': '#f1b84b', 'color': 'black'};
+            } else {
+                return {'backgroundColor': '#cc0641', 'color': 'white'};
+            }
+        }
+    """)
+
+    # Custom CSS for styling the grid, including day headers
+    custom_css = {
+        ".ag-header-cell": {
+            "background-color": "#cc0641 !important",
+            "color": "white !important",
+            "font-weight": "bold",
+            "padding": "4px"
+        },
+        ".ag-header-group-cell": {
+            "background-color": "#cc0641 !important",
+            "color": "white !important",
+            "font-weight": "bold",
+        },
+        ".ag-cell": {
+            "padding": "2px",
+            "font-size": "12px"
+        },
+        ".ag-theme-streamlit .ag-row": {
+            "max-height": "30px"
+        },
+        ".ag-theme-streamlit .ag-root-wrapper": {
+            "border": "2px solid #cc0641",
+            "border-radius": "5px"
+        }
+    }
+
+    columnDefs = [
+        {
+            "headerName": "Resource Name",
+            "field": "Resource_Name",
+            "resizable": True,
+            "flex": 2,
+            "minWidth": 150
+        },
+        {
+            "headerName": "Shop Name",
+            "field": "Shop[Name]",
+            "resizable": True,
+            "flex": 2,
+            "minWidth": 150
+        }
+    ]
+
+
+    # Append dynamic column definitions for SF (ShiftDurationHours), ACT (hours_worked), and Delta (Diferencia de act duración)
+    for column in df_tab3.columns[2:]:  # Start from 2 to skip Resource_Name and Shop[Name]
+        if 'ShiftDurationHours' in column:
+            headerName = column.split('_')[1] + ' (' + column.split('_')[2] + ')'
+            columnDefs.append({
+                "headerName": headerName,
+                "children": [
+                    {
+                        "field": column,
+                        "headerName": "SF",  # ShiftDurationHours
+                        "valueFormatter": "x.toFixed(1)",
+                        "resizable": True,
+                        "flex": 1,
+                        "cellStyle": js_code
+                    },
+                    {
+                        "field": column.replace('ShiftDurationHours', 'hours_worked'),
+                        "headerName": "ACT",  # hours_worked
+                        "valueFormatter": "x.toFixed(1)",
+                        "resizable": True,
+                        "flex": 1,
+                        "cellStyle": js_code
+                    },
+                    {
+                        "field": column.replace('ShiftDurationHours', 'Diferencia_de_act_duración'),
+                        "headerName": "Delta",  # Diferencia de act duración
+                        "valueFormatter": "x.toFixed(1)",
+                        "resizable": True,
+                        "flex": 1,
+                        "cellStyle": js_code
+                    }
+                ]
+            })
+
+    # Calculate totals for numeric columns
+    total_row_tab3 = {
+        'Resource_Name': 'Total'
+    }
+    for col in numeric_columns_in_pivot_tab3:
+        col = col.replace(' ', '_')  # Ensure consistency with df_tab3 column names
+        if col in df_tab3.columns:  # Check if the column exists
+            # Special handling for Delta columns (if needed)
+            if 'Diferencia_de_act_duración' in col:
+                total_row_tab3[col] = f"{int(df_tab3[col].sum().round(0)):,}"  # Sum Delta (if summable)
+            else:
+                total_row_tab3[col] = f"{int(df_tab3[col].sum().round(0)):,}"  # Format with commas
+
+    # Convert total_row to DataFrame
+    total_df_tab3 = pd.DataFrame(total_row_tab3, index=[0])
+    df_tab3_with_totals = pd.concat([total_df_tab3, df_tab3], ignore_index=True)  
+
+    # Configure GridOptionsBuilder with JavaScript code
+    gb_tab3 = GridOptionsBuilder.from_dataframe(df_tab4_with_totals)
+    # Add individual column configurations for conditional formatting
+    for column in df_tab3[1:]:
+        gb_tab3.configure_column(field=column, cellStyle=js_code)
+
+    gb_tab3.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+
+    # Build grid options
+    grid_options_tab3 = gb_tab3.build()
+
+    # Set the columnDefs in the grid_options dictionary
+    grid_options_tab3['columnDefs'] = columnDefs
+
+    # Render the AG-Grid in Streamlit with full width and custom styling
+    AgGrid(
+        df_tab3_with_totals,
+        gridOptions=grid_options_tab3,
+        enable_enterprise_modules=True,
+        allow_unsafe_jscode=True,
+        fit_columns_on_grid_load=True,
+        height=1000,
+        width='100%',
+        theme='streamlit',
+        custom_css=custom_css
     )
 
     with tab5:
