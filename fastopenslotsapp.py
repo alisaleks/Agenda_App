@@ -1449,10 +1449,14 @@ with tab3:
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+# Format the month_start_date as a string like "October 1"
+
+formatted_month_start_date = month_start_date.strftime("%B %#d").lstrip('0')
+
 with tab6:
     st.markdown("### Weekly Overview")
     # Add a new selectbox for comparison options
-    comparison_options = ['Comparison with start of the month (month_start_date)', 'Comparison with yesterday']
+    comparison_options = [f'Comparison with start of the month ({formatted_month_start_date})', 'Comparison with yesterday']
     selected_comparison = st.selectbox('Select Comparison:', comparison_options)
     
     metric_options = ['Shift Hours % change', 'Blocked Hours % change']
@@ -1504,9 +1508,9 @@ with tab6:
     weekly_aggregated_sep6 = weekly_aggregated_sep6.reset_index()
     
     # Adjust the logic to use different dataframes based on the comparison selection
-    if selected_comparison == 'Comparison with start of the month (month_start_date)':
+    if selected_comparison == f'Comparison with start of the month ({formatted_month_start_date})':
         comparison_df = weekly_aggregated_sep6  # Assuming Sep 6 data is stored in weekly_aggregated_yesterday
-        comparison_label = 'month_start_date'
+        comparison_label = formatted_month_start_date
     else:
         comparison_df = weekly_aggregated_yesterday  # Assuming yesterday's data is in weekly_aggregated_yesterday2
         comparison_label = 'Yesterday'
@@ -1717,7 +1721,7 @@ with tab6:
     fig = go.Figure()
 
     # Adjust the comparison label dynamically
-    comparison_label = 'month_start_date' if selected_comparison == 'Comparison with start of the month (month_start_date)' else 'Yesterday'
+    comparison_label = formatted_month_start_date if selected_comparison == f'Comparison with start of the month ({formatted_month_start_date})' else 'Yesterday'
 
     # Add bars for 'today' values
     fig.add_trace(go.Bar(
@@ -1729,7 +1733,7 @@ with tab6:
         textposition='auto'
     ))
 
-    # Add bars for 'comparison' values with a dynamic label (either 'Yesterday' or 'Sep 6')
+    # Add bars for 'comparison' values with a dynamic label (either 'Yesterday' or month_start_date)
     fig.add_trace(go.Bar(
         x=merged_grouped_total['iso_week'],
         y=merged_grouped_total[f'{metric_column}_comparison'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
