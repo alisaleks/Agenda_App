@@ -1449,313 +1449,312 @@ with tab3:
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+with tab6:
+    st.markdown("### Weekly Overview")
+    # Add a new selectbox for comparison options
+    comparison_options = ['Comparison with start of the month (month_start_date)', 'Comparison with yesterday']
+    selected_comparison = st.selectbox('Select Comparison:', comparison_options)
+    
+    metric_options = ['Shift Hours % change', 'Blocked Hours % change']
+    selected_metric = st.selectbox('Select Metric:', metric_options)
+    metric_map = {
+        'Shift Hours % change': 'TotalHours',
+        'Blocked Hours % change': 'BlockedHours',
+    }
 
-    with tab6:
-        st.markdown("### Weekly Overview")
-        # Add a new selectbox for comparison options
-        comparison_options = ['Comparison with start of the month (Oct 1)', 'Comparison with yesterday']
-        selected_comparison = st.selectbox('Select Comparison:', comparison_options)
-        
-        metric_options = ['Shift Hours % change', 'Blocked Hours % change']
-        selected_metric = st.selectbox('Select Metric:', metric_options)
-        metric_map = {
-            'Shift Hours % change': 'TotalHours',
-            'Blocked Hours % change': 'BlockedHours',
+    # Get the column associated with the selected metric
+    metric_column = metric_map[selected_metric]
+
+    weekly_shift_slots = weekly_shift_slots[(weekly_shift_slots['date'] >= month_start_date) & (weekly_shift_slots['date'] <= month_end_date)].copy()
+    weekly_shift_slots_yesterday = weekly_shift_slots_yesterday[(weekly_shift_slots_yesterday['date'] >= month_start_date) & (weekly_shift_slots_yesterday['date'] <= month_end_date)].copy()
+    weekly_shift_sep6 = weekly_shift_sep6[(weekly_shift_sep6['date'] >= month_start_date) & (weekly_shift_sep6['date'] <= month_end_date)].copy()        
+
+    # Pivot the table for Tab 4
+    weekly_aggregated = weekly_shift_slots.pivot_table(
+        index='Region',
+        columns='iso_week',
+        values=f'{metric_column}',
+        aggfunc='sum',
+        fill_value=0
+    )
+
+    weekly_aggregated = weekly_aggregated.fillna(0)
+    weekly_aggregated = weekly_aggregated.reset_index()
+
+    # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
+    weekly_aggregated_yesterday = weekly_shift_slots_yesterday.pivot_table(
+        index='Region',
+        columns='iso_week',
+        values=f'{metric_column}',
+        aggfunc='sum',
+        fill_value=0
+    )
+    weekly_aggregated_yesterday = weekly_aggregated_yesterday.fillna(0)
+    weekly_aggregated_yesterday = weekly_aggregated_yesterday.reset_index()
+
+    # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
+    weekly_aggregated_sep6 = weekly_shift_sep6.pivot_table(
+        index='Region',
+        columns='iso_week',
+        values=f'{metric_column}',
+        aggfunc='sum',
+        fill_value=0
+    )
+    weekly_aggregated_sep6 = weekly_aggregated_sep6.fillna(0)
+    weekly_aggregated_sep6 = weekly_aggregated_sep6.reset_index()
+    
+    # Adjust the logic to use different dataframes based on the comparison selection
+    if selected_comparison == 'Comparison with start of the month (month_start_date)':
+        comparison_df = weekly_aggregated_sep6  # Assuming Sep 6 data is stored in weekly_aggregated_yesterday
+        comparison_label = 'month_start_date'
+    else:
+        comparison_df = weekly_aggregated_yesterday  # Assuming yesterday's data is in weekly_aggregated_yesterday2
+        comparison_label = 'Yesterday'
+
+    # Step 1: Melt the data to convert wide to long format
+    weekly_aggregated_melted = pd.melt(
+        weekly_aggregated, 
+        id_vars=['Region'], 
+        var_name='iso_week', 
+        value_name=f'{metric_column}_today'
+    )
+    comparison_melted = pd.melt(
+        comparison_df, 
+        id_vars=['Region'], 
+        var_name='iso_week', 
+        value_name=f'{metric_column}_comparison'
+    )
+
+    # Step 2: Merge the two dataframes on Region and iso_week
+    merged_data = pd.merge(
+        weekly_aggregated_melted, 
+        comparison_melted, 
+        on=['Region', 'iso_week'], 
+        how='inner'
+    )
+
+    merged_grouped = merged_data.groupby(['Region', 'iso_week']).agg(
+        {
+            f'{metric_column}_today': 'sum',  # Sum today's metric values
+            f'{metric_column}_comparison': 'sum'  # Sum yesterday's metric values
         }
+    ).reset_index()
+    weekly_totals = merged_grouped.groupby('iso_week').agg(
+        {f'{metric_column}_today': 'sum', f'{metric_column}_comparison': 'sum'}
+    ).reset_index()
 
-        # Get the column associated with the selected metric
-        metric_column = metric_map[selected_metric]
+    # Step 3: Calculate monthly totals (sum over all weeks)
+    monthly_total_today = weekly_totals[f'{metric_column}_today'].sum()
+    monthly_total_comparison = weekly_totals[f'{metric_column}_comparison'].sum()
 
-        weekly_shift_slots = weekly_shift_slots[(weekly_shift_slots['date'] >= month_start_date) & (weekly_shift_slots['date'] <= month_end_date)].copy()
-        weekly_shift_slots_yesterday = weekly_shift_slots_yesterday[(weekly_shift_slots_yesterday['date'] >= month_start_date) & (weekly_shift_slots_yesterday['date'] <= month_end_date)].copy()
-        weekly_shift_sep6 = weekly_shift_sep6[(weekly_shift_sep6['date'] >= month_start_date) & (weekly_shift_sep6['date'] <= month_end_date)].copy()        
-          
-            # Pivot the table for Tab 4
-        weekly_aggregated = weekly_shift_slots.pivot_table(
-            index='Region',
-            columns='iso_week',
-            values=f'{metric_column}',
-            aggfunc='sum',
-            fill_value=0
-        )
+    # Step 7: Add the month column for each region based on the aggregated data
+    region_month_totals = merged_grouped.groupby('Region').agg(
+        {f'{metric_column}_today': 'sum', f'{metric_column}_comparison': 'sum'}
+    ).reset_index()
 
-        weekly_aggregated = weekly_aggregated.fillna(0)
-        weekly_aggregated = weekly_aggregated.reset_index()
+    def calculate_percentage_change(today_value, yesterday_value):
+        if yesterday_value == 0:
+            return 0
+        return ((today_value - yesterday_value) / abs(yesterday_value)) * 100
+    
+    # Step 2: Calculate percentage change for each week based on the total values
+    weekly_totals['total_percentage_change'] = weekly_totals.apply(
+        lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_comparison']), axis=1
+    )
+    # Step 3: Calculate percentage change
+    merged_data['percentage_change'] = merged_data.apply(
+        lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_comparison']), axis=1
+    )
+    monthly_percentage_change = calculate_percentage_change(monthly_total_today, monthly_total_comparison)
+    # Calculate percentage change for the month for each region
+    region_month_totals['month_percentage_change'] = region_month_totals.apply(
+        lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_comparison']), axis=1
+    )
+    # Step 4: Optional sorting or filtering
+    merged_data_sorted = merged_data.sort_values(by=['Region', 'iso_week'])
+    merged_pivot = merged_data_sorted.pivot_table(
+        index='Region',
+        columns='iso_week',
+        values='percentage_change',
+    ).reset_index()
+    # Append the 'Month Total' column to the pivot table for each region
+    merged_pivot['Month Total'] = merged_pivot['Region'].map(
+        dict(zip(region_month_totals['Region'], region_month_totals['month_percentage_change']))
+    )
 
-        # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
-        weekly_aggregated_yesterday = weekly_shift_slots_yesterday.pivot_table(
-            index='Region',
-            columns='iso_week',
-            values=f'{metric_column}',
-            aggfunc='sum',
-            fill_value=0
-        )
-        weekly_aggregated_yesterday = weekly_aggregated_yesterday.fillna(0)
-        weekly_aggregated_yesterday = weekly_aggregated_yesterday.reset_index()
+    # Fill NaN values for the 'Total' row in the 'Month Total' column
+    merged_pivot['Month Total'].fillna(monthly_percentage_change, inplace=True)
+    # Step 5: Append the total row to the pivot table
+    total_row = pd.DataFrame(
+        [['Total'] + weekly_totals['total_percentage_change'].tolist() + [monthly_percentage_change]], 
+        columns=merged_pivot.columns.tolist()  
+    )
+    merged_pivot = pd.concat([merged_pivot, total_row], ignore_index=True)
 
-        # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
-        weekly_aggregated_sep6 = weekly_shift_sep6.pivot_table(
-            index='Region',
-            columns='iso_week',
-            values=f'{metric_column}',
-            aggfunc='sum',
-            fill_value=0
-        )
-        weekly_aggregated_sep6 = weekly_aggregated_sep6.fillna(0)
-        weekly_aggregated_sep6 = weekly_aggregated_sep6.reset_index()
-        
-        # Adjust the logic to use different dataframes based on the comparison selection
-        if selected_comparison == 'Comparison with start of the month (Oct 1)':
-            comparison_df = weekly_aggregated_sep6  # Assuming Sep 6 data is stored in weekly_aggregated_yesterday
-            comparison_label = 'Oct 1'
-        else:
-            comparison_df = weekly_aggregated_yesterday  # Assuming yesterday's data is in weekly_aggregated_yesterday2
-            comparison_label = 'Yesterday'
+    # Optional: Rename the columns for better display (e.g., 'Week 36', 'Week 37', etc.)
+    merged_pivot.columns = ['Region'] + [f"Week {int(col)}" if col != 'Month Total' else col for col in merged_pivot.columns[1:]]
+    
+    # Custom CSS for the table (same as Tab 2, adjusted if needed)
+    custom_css_tab6 = {
+        ".ag-header-cell": {
+            "background-color": "#cc0641 !important",  
+            "color": "white !important",
+            "font-weight": "bold",
+            "padding": "4px"
+        },
+        ".ag-cell": {
+            "padding": "2px",
+            "font-size": "12px"
+        },
+        ".ag-header": {
+            "height": "35px"
+        },
+        ".ag-theme-streamlit .ag-row": {
+            "max-height": "30px"
+        },
+        ".ag-theme-streamlit .ag-root-wrapper": {
+            "border": "2px solid #cc0641",
+            "border-radius": "5px"
+        }
+    }
+    if selected_metric == 'Blocked Hours % change':
+        color_coding_js = JsCode("""
+        function(params) {
+            var value = params.value;
 
-        # Step 1: Melt the data to convert wide to long format
-        weekly_aggregated_melted = pd.melt(
-            weekly_aggregated, 
-            id_vars=['Region'], 
-            var_name='iso_week', 
-            value_name=f'{metric_column}_today'
-        )
-        comparison_melted = pd.melt(
-            comparison_df, 
-            id_vars=['Region'], 
-            var_name='iso_week', 
-            value_name=f'{metric_column}_comparison'
-        )
-
-        # Step 2: Merge the two dataframes on Region and iso_week
-        merged_data = pd.merge(
-            weekly_aggregated_melted, 
-            comparison_melted, 
-            on=['Region', 'iso_week'], 
-            how='inner'
-        )
-
-        merged_grouped = merged_data.groupby(['Region', 'iso_week']).agg(
-            {
-                f'{metric_column}_today': 'sum',  # Sum today's metric values
-                f'{metric_column}_comparison': 'sum'  # Sum yesterday's metric values
-            }
-        ).reset_index()
-        weekly_totals = merged_grouped.groupby('iso_week').agg(
-            {f'{metric_column}_today': 'sum', f'{metric_column}_comparison': 'sum'}
-        ).reset_index()
-
-        # Step 3: Calculate monthly totals (sum over all weeks)
-        monthly_total_today = weekly_totals[f'{metric_column}_today'].sum()
-        monthly_total_comparison = weekly_totals[f'{metric_column}_comparison'].sum()
-
-        # Step 7: Add the month column for each region based on the aggregated data
-        region_month_totals = merged_grouped.groupby('Region').agg(
-            {f'{metric_column}_today': 'sum', f'{metric_column}_comparison': 'sum'}
-        ).reset_index()
-
-        def calculate_percentage_change(today_value, yesterday_value):
-            if yesterday_value == 0:
-                return 0
-            return ((today_value - yesterday_value) / abs(yesterday_value)) * 100
-        
-        # Step 2: Calculate percentage change for each week based on the total values
-        weekly_totals['total_percentage_change'] = weekly_totals.apply(
-            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_comparison']), axis=1
-        )
-        # Step 3: Calculate percentage change
-        merged_data['percentage_change'] = merged_data.apply(
-            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_comparison']), axis=1
-        )
-        monthly_percentage_change = calculate_percentage_change(monthly_total_today, monthly_total_comparison)
-        # Calculate percentage change for the month for each region
-        region_month_totals['month_percentage_change'] = region_month_totals.apply(
-            lambda row: calculate_percentage_change(row[f'{metric_column}_today'], row[f'{metric_column}_comparison']), axis=1
-        )
-        # Step 4: Optional sorting or filtering
-        merged_data_sorted = merged_data.sort_values(by=['Region', 'iso_week'])
-        merged_pivot = merged_data_sorted.pivot_table(
-            index='Region',
-            columns='iso_week',
-            values='percentage_change',
-        ).reset_index()
-        # Append the 'Month Total' column to the pivot table for each region
-        merged_pivot['Month Total'] = merged_pivot['Region'].map(
-            dict(zip(region_month_totals['Region'], region_month_totals['month_percentage_change']))
-        )
-
-        # Fill NaN values for the 'Total' row in the 'Month Total' column
-        merged_pivot['Month Total'].fillna(monthly_percentage_change, inplace=True)
-        # Step 5: Append the total row to the pivot table
-        total_row = pd.DataFrame(
-            [['Total'] + weekly_totals['total_percentage_change'].tolist() + [monthly_percentage_change]], 
-            columns=merged_pivot.columns.tolist()  
-        )
-        merged_pivot = pd.concat([merged_pivot, total_row], ignore_index=True)
-
-        # Optional: Rename the columns for better display (e.g., 'Week 36', 'Week 37', etc.)
-        merged_pivot.columns = ['Region'] + [f"Week {int(col)}" if col != 'Month Total' else col for col in merged_pivot.columns[1:]]
-        
-        # Custom CSS for the table (same as Tab 2, adjusted if needed)
-        custom_css_tab6 = {
-            ".ag-header-cell": {
-                "background-color": "#cc0641 !important",  
-                "color": "white !important",
-                "font-weight": "bold",
-                "padding": "4px"
-            },
-            ".ag-cell": {
-                "padding": "2px",
-                "font-size": "12px"
-            },
-            ".ag-header": {
-                "height": "35px"
-            },
-            ".ag-theme-streamlit .ag-row": {
-                "max-height": "30px"
-            },
-            ".ag-theme-streamlit .ag-root-wrapper": {
-                "border": "2px solid #cc0641",
-                "border-radius": "5px"
+            if (params.data['Region'] === 'Total') {
+                return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
+            } else {
+                // Color coding for Blocked Hours % Change
+                if (value <= 0) {
+                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative or zero BlockedHours % Change
+                } else if (value > 0) {
+                    return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive BlockedHours % Change
+                }
+                return null;  // Default styling for other values
             }
         }
-        if selected_metric == 'Blocked Hours % change':
-            color_coding_js = JsCode("""
-            function(params) {
-                var value = params.value;
+        """)
+    elif selected_metric == 'Shift Hours % change':
+        color_coding_js = JsCode("""
+        function(params) {
+            var value = params.value;
 
-                if (params.data['Region'] === 'Total') {
-                    return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
-                } else {
-                    // Color coding for Blocked Hours % Change
-                    if (value <= 0) {
-                        return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative or zero BlockedHours % Change
-                    } else if (value > 0) {
-                        return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive BlockedHours % Change
-                    }
-                    return null;  // Default styling for other values
+            if (params.data['Region'] === 'Total') {
+                return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
+            } else {
+                // Color coding for Total Hours % Change (reverse logic)
+                if (value < 0) {
+                    return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive TotalHours % Change
+                } else if (value >= 0) {
+                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative TotalHours % Change
                 }
+                return null;  // Default styling for other values
             }
-            """)
-        elif selected_metric == 'Shift Hours % change':
-            color_coding_js = JsCode("""
-            function(params) {
-                var value = params.value;
+        }
+        """)
 
-                if (params.data['Region'] === 'Total') {
-                    return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
-                } else {
-                    // Color coding for Total Hours % Change (reverse logic)
-                    if (value < 0) {
-                        return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive TotalHours % Change
-                    } else if (value >= 0) {
-                        return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative TotalHours % Change
-                    }
-                    return null;  // Default styling for other values
-                }
-            }
-            """)
-
-        # Create column definitions for percentage change table
-        columnDefs_tab6_pct_change = [{"field": 'Region', "headerName": "Region", "resizable": True, "flex": 1}]
-        for column in merged_pivot.columns[1:]:
-            columnDefs_tab6_pct_change.append({
-                "field": column,
-                "headerName": column,  # Use 'Week {iso_week}' as the header
-                "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) + ' %' : '0 %')", 
-                "resizable": True,
-                "flex": 1,
-                "cellStyle": color_coding_js  # Apply the specific function for the percentage table
-            })
-
-        # GridOptionsBuilder for percentage change table
-        gb_tab6_pct_change = GridOptionsBuilder.from_dataframe(merged_pivot)
-        for col in merged_pivot.columns:  # For the percentage change table
-            gb_tab6_pct_change.configure_column(col, cellStyle=color_coding_js)
-
-        # Grid options for auto-sizing and responsive layout
-        gb_tab6_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
-
-        # Build grid options
-        grid_options_tab6_pct_change = gb_tab6_pct_change.build()
-
-        # Add custom column definitions to grid options
-        grid_options_tab6_pct_change['columnDefs'] = columnDefs_tab6_pct_change
-
-        # Render pivot_pct_change table using AgGrid
-        st.markdown(f"### {selected_metric}: Today vs {comparison_label}")
-
-        AgGrid(
-            merged_pivot,
-            gridOptions=grid_options_tab6_pct_change,
-            enable_enterprise_modules=True,
-            allow_unsafe_jscode=True,  # Allow JavaScript code execution
-            fit_columns_on_grid_load=True,
-            height=187,  # Set grid height for percentage change table
-            width='100%',
-            theme='streamlit',
-            custom_css=custom_css_tab6
-          )
-
-        # Aggregate totals for each iso_week across all regions
-        merged_grouped_total = merged_grouped.groupby('iso_week').agg(
-            {f'{metric_column}_today': 'sum', f'{metric_column}_comparison': 'sum'}
-        ).reset_index()
-
-        # Create a new row for the monthly total without formatting for calculation purposes
-        monthly_totals_row = pd.DataFrame({
-            'iso_week': ['Month Total'],  # Label for the new row
-            f'{metric_column}_today': [monthly_total_today],  # Monthly total for today
-            f'{metric_column}_comparison': [monthly_total_comparison]  # Monthly total for yesterday
+    # Create column definitions for percentage change table
+    columnDefs_tab6_pct_change = [{"field": 'Region', "headerName": "Region", "resizable": True, "flex": 1}]
+    for column in merged_pivot.columns[1:]:
+        columnDefs_tab6_pct_change.append({
+            "field": column,
+            "headerName": column,  # Use 'Week {iso_week}' as the header
+            "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) + ' %' : '0 %')", 
+            "resizable": True,
+            "flex": 1,
+            "cellStyle": color_coding_js  # Apply the specific function for the percentage table
         })
 
-        # Append the new row to the merged_grouped_total DataFrame
-        merged_grouped_total = pd.concat([merged_grouped_total, monthly_totals_row], ignore_index=True)
+    # GridOptionsBuilder for percentage change table
+    gb_tab6_pct_change = GridOptionsBuilder.from_dataframe(merged_pivot)
+    for col in merged_pivot.columns:  # For the percentage change table
+        gb_tab6_pct_change.configure_column(col, cellStyle=color_coding_js)
 
-        # Format numbers with commas and round them to integers
-        merged_grouped_total[f'{metric_column}_today'] = merged_grouped_total[f'{metric_column}_today'].round(0).apply(lambda x: f"{int(x):,}")
-        merged_grouped_total[f'{metric_column}_comparison'] = merged_grouped_total[f'{metric_column}_comparison'].round(0).apply(lambda x: f"{int(x):,}")
-        # Create an interactive bar chart using Plotly
-        fig = go.Figure()
+    # Grid options for auto-sizing and responsive layout
+    gb_tab6_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
 
-        # Adjust the comparison label dynamically
-        comparison_label = 'Oct 1' if selected_comparison == 'Comparison with start of the month (Oct 1)' else 'Yesterday'
+    # Build grid options
+    grid_options_tab6_pct_change = gb_tab6_pct_change.build()
 
-        # Add bars for 'today' values
-        fig.add_trace(go.Bar(
-            x=merged_grouped_total['iso_week'],
-            y=merged_grouped_total[f'{metric_column}_today'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
-            name='Today',
-            marker_color='#cc0641',  # Use the custom color for 'Today'
-            text=merged_grouped_total[f'{metric_column}_today'],  # Show the formatted values
-            textposition='auto'
-        ))
+    # Add custom column definitions to grid options
+    grid_options_tab6_pct_change['columnDefs'] = columnDefs_tab6_pct_change
 
-        # Add bars for 'comparison' values with a dynamic label (either 'Yesterday' or 'Sep 6')
-        fig.add_trace(go.Bar(
-            x=merged_grouped_total['iso_week'],
-            y=merged_grouped_total[f'{metric_column}_comparison'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
-            name=comparison_label,  # Dynamic label for the comparison column
-            marker_color='#f1b84b',  # Lighter shade for the comparison
-            text=merged_grouped_total[f'{metric_column}_comparison'],  # Show the formatted values
-            textposition='auto'
-        ))
+    # Render pivot_pct_change table using AgGrid
+    st.markdown(f"### {selected_metric}: Today vs {comparison_label}")
 
-        # Customize layout
-        fig.update_layout(
-            title=f'Comparison of {metric_column} for Today vs {comparison_label} (Aggregated Across Regions)',  # Adjust the title dynamically
-            xaxis=dict(
-                title='ISO Week / Month', 
-                type='category',
-                categoryorder='array',  # Order the x-axis categories manually
-                categoryarray=list(merged_grouped_total['iso_week'])  # Set the correct order: weeks followed by "Month Total"
-            ),
-            yaxis=dict(title=f'{metric_column}'),
-            barmode='group',  # Group the bars for today and the comparison side-by-side
-            bargap=0.2,  # Set gap between bars
-            bargroupgap=0.1,  # Set gap between groups
-            legend_title="Metric",
-            font=dict(size=12),  # Adjust font size for better readability
-        )
+    AgGrid(
+        merged_pivot,
+        gridOptions=grid_options_tab6_pct_change,
+        enable_enterprise_modules=True,
+        allow_unsafe_jscode=True,  # Allow JavaScript code execution
+        fit_columns_on_grid_load=True,
+        height=187,  # Set grid height for percentage change table
+        width='100%',
+        theme='streamlit',
+        custom_css=custom_css_tab6
+      )
 
-        # Render the plot in Streamlit
-        st.plotly_chart(fig)
+    # Aggregate totals for each iso_week across all regions
+    merged_grouped_total = merged_grouped.groupby('iso_week').agg(
+        {f'{metric_column}_today': 'sum', f'{metric_column}_comparison': 'sum'}
+    ).reset_index()
+
+    # Create a new row for the monthly total without formatting for calculation purposes
+    monthly_totals_row = pd.DataFrame({
+        'iso_week': ['Month Total'],  # Label for the new row
+        f'{metric_column}_today': [monthly_total_today],  # Monthly total for today
+        f'{metric_column}_comparison': [monthly_total_comparison]  # Monthly total for yesterday
+    })
+
+    # Append the new row to the merged_grouped_total DataFrame
+    merged_grouped_total = pd.concat([merged_grouped_total, monthly_totals_row], ignore_index=True)
+
+    # Format numbers with commas and round them to integers
+    merged_grouped_total[f'{metric_column}_today'] = merged_grouped_total[f'{metric_column}_today'].round(0).apply(lambda x: f"{int(x):,}")
+    merged_grouped_total[f'{metric_column}_comparison'] = merged_grouped_total[f'{metric_column}_comparison'].round(0).apply(lambda x: f"{int(x):,}")
+    # Create an interactive bar chart using Plotly
+    fig = go.Figure()
+
+    # Adjust the comparison label dynamically
+    comparison_label = 'month_start_date' if selected_comparison == 'Comparison with start of the month (month_start_date)' else 'Yesterday'
+
+    # Add bars for 'today' values
+    fig.add_trace(go.Bar(
+        x=merged_grouped_total['iso_week'],
+        y=merged_grouped_total[f'{metric_column}_today'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
+        name='Today',
+        marker_color='#cc0641',  # Use the custom color for 'Today'
+        text=merged_grouped_total[f'{metric_column}_today'],  # Show the formatted values
+        textposition='auto'
+    ))
+
+    # Add bars for 'comparison' values with a dynamic label (either 'Yesterday' or 'Sep 6')
+    fig.add_trace(go.Bar(
+        x=merged_grouped_total['iso_week'],
+        y=merged_grouped_total[f'{metric_column}_comparison'].apply(lambda x: int(x.replace(',', ''))),  # Plot the numeric values
+        name=comparison_label,  # Dynamic label for the comparison column
+        marker_color='#f1b84b',  # Lighter shade for the comparison
+        text=merged_grouped_total[f'{metric_column}_comparison'],  # Show the formatted values
+        textposition='auto'
+    ))
+
+    # Customize layout
+    fig.update_layout(
+        title=f'Comparison of {metric_column} for Today vs {comparison_label} (Aggregated Across Regions)',  # Adjust the title dynamically
+        xaxis=dict(
+            title='ISO Week / Month', 
+            type='category',
+            categoryorder='array',  # Order the x-axis categories manually
+            categoryarray=list(merged_grouped_total['iso_week'])  # Set the correct order: weeks followed by "Month Total"
+        ),
+        yaxis=dict(title=f'{metric_column}'),
+        barmode='group',  # Group the bars for today and the comparison side-by-side
+        bargap=0.2,  # Set gap between bars
+        bargroupgap=0.1,  # Set gap between groups
+        legend_title="Metric",
+        font=dict(size=12),  # Adjust font size for better readability
+    )
+
+    # Render the plot in Streamlit
+    st.plotly_chart(fig)
