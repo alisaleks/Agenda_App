@@ -904,6 +904,7 @@ with tab4:
         custom_css=custom_css  # Apply custom CSS
     )
 with tab3:
+    st.markdown(''':red[ *****Work in Porgress***: En esta pestaña podrá comparar las horas trabajadas reales con las horas configuradas de SF por empleado*]''')
     # Pivot the table for Tab 3
     pivot_table_tab3 = filtered_clock.pivot_table(
         index=['Resource Name', 'Shop[Name]'],
