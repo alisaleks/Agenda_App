@@ -3,6 +3,9 @@ import pytz
 from datetime import datetime, timedelta
 import calendar 
 import json
+from openpyxl import load_workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 # Function to handle out-of-bound datetime values
 def handle_out_of_bound_dates(date_str):
@@ -863,10 +866,37 @@ shift_slots.rename(columns={
 }, inplace=True)
 # Save to Excel
 current_date = datetime.now().strftime("%Y-%m-%d")
-output_file_path = f'shiftslots_{current_date}.xlsx'  # Use f-string to include the date in the filename
+output_file_path = f'shiftslots_{current_date}.xlsx' 
 shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')
 
 
+# Now to convert it into a table format
+wb = load_workbook(output_file_path)
+ws = wb.active
+
+# Define the range of the data to create a table
+min_col = ws.min_column
+max_col = ws.max_column
+min_row = ws.min_row
+max_row = ws.max_row
+
+# Create a table reference for your data
+table = Table(displayName="ShiftSlotsTable", ref=f"{ws.cell(row=min_row, column=min_col).coordinate}:{ws.cell(row=max_row, column=max_col).coordinate}")
+
+# Add a default style to the table
+style = TableStyleInfo(
+    name="TableStyleMedium9", 
+    showFirstColumn=False,
+    showLastColumn=False,
+    showRowStripes=True,
+    showColumnStripes=True)
+table.tableStyleInfo = style
+
+# Add the table to the worksheet
+ws.add_table(table)
+
+# Save the workbook with the table
+wb.save(output_file_path)
 
 #TAB4
 sfshifts_merged.head()
