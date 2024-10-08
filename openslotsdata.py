@@ -270,7 +270,6 @@ resources_unique = resources_sorted.drop_duplicates(subset=['ShopResourceKey'], 
 
 # Step 4: Add 'Active' status based on date range
 resources_unique['Active'] = resources_unique.apply(is_active, axis=1, args=(start_date, end_date))
-
 # Step 5: Merge 'shifts_filtered' with 'resources_unique' (add both 'Service Resource[IsActive]' and 'Active')
 shifts_filtered = shifts_filtered.merge(
     resources_unique[['ShopResourceKey', 'Service Resource[IsActive]', 'Active']],
@@ -1346,20 +1345,26 @@ total_hours_per_employee_daily['Date'] = pd.to_datetime(total_hours_per_employee
 sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate']).dt.date
 sfshifts_merged[sfshifts_merged['PersonalNumberKey'] == '003_11126'].head()
 sfshifts_merged['PersonalNumber'] = sfshifts_merged['PersonalNumberKey'].str[4:]
+sfshifts_merged_per_emp = sfshifts_merged.groupby(['PersonalNumber', 'ShiftDate'])[[ 'ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']].sum().reset_index()
+sfshifts_merged_per_emp[sfshifts_merged_per_emp['PersonalNumber']=='31992']
+
 # Step 4: Merge both datasets (without region/area/shop data yet)
 clockin_merged = pd.merge(
     total_hours_per_employee_daily[['ID RH', 'Date', 'hours_worked', 'hours_worked_numeric']], 
-    sfshifts_merged[['PersonalNumber', 'GT_ServiceResource__r.Name', 'ShiftDate', 'ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']],
+    sfshifts_merged_per_emp[['PersonalNumber', 'ShiftDate', 'ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']],
     left_on=['ID RH', 'Date'],    
     right_on=['PersonalNumber', 'ShiftDate'], 
     how='outer', 
     suffixes=('_sf', '_act'), 
     indicator=True 
 )
+clockin_merged
+hcm_map_active = hcm_map[hcm_map['Active'] == True].copy()
+hcm_map_active
 clockin_merged.head()
 clockin_merged = pd.merge(
     clockin_merged,
-    hcm_map[['PersonalNumber', 'ServiceResourceName SF','PersonalNumber SF']],
+    hcm_map_active[['PersonalNumber', 'ServiceResourceName SF','PersonalNumber SF']],
     left_on='PersonalNumber',
     right_on='PersonalNumber',
     how='left'
@@ -1376,7 +1381,7 @@ clockin_merged = clockin_merged[clockin_merged['SYM']=='Y']
 clockin_merged.columns
 clockin_merged[[ 'hours_worked','ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']] = clockin_merged[['hours_worked','ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']].fillna(0)
 # Now you can check for missing values again if needed
-clockin_merged['Resource Name'] = clockin_merged['ServiceResourceName SF'].fillna(clockin_merged['GT_ServiceResource__r.Name'])
+clockin_merged['Resource Name'] = clockin_merged['ServiceResourceName SF']
 clockin_merged['Resource Name'] = clockin_merged['Resource Name'].str.title()
 clockin_merged['Date'] = clockin_merged['Date'].fillna(clockin_merged['ShiftDate'])
 clockin_merged['Date'] = pd.to_datetime(clockin_merged['Date'])
@@ -1392,10 +1397,10 @@ clockin_merged.rename(columns={
     'AREA': 'Area',
     'DESCR':'Shop[Name]',
 }, inplace=True)
-clockin_merged.drop(columns=['GT_ServiceResource__r.Name', 'ServiceResourceName SF', '_merge', 'SYM', 'ID RH'], inplace=True)
+clockin_merged.columns
+clockin_merged.drop(columns=['ServiceResourceName SF', '_merge', 'SYM', 'ID RH'], inplace=True)
 clockin_merged['Diferencia de act duración'] = clockin_merged['ShiftDurationHoursAdjusted'].fillna(0) - clockin_merged['hours_worked_numeric'].fillna(0)
 clockin_merged[['hours_worked_numeric', 'hours_worked']].head() 
-
 clockin_merged = clockin_merged.drop_duplicates(subset=['PersonalNumber', 'Date'])
 duplicates = clockin_merged[clockin_merged.duplicated(subset=['PersonalNumber', 'Date'])]
 duplicates

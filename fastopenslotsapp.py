@@ -1103,290 +1103,262 @@ with tab3:
         custom_css=custom_css
     )
 
-    with tab5:
 
-        if weekly_shift_slots.empty:
-            st.warning("No shops found for the selected filter criteria.")
-        if weekly_shift_slots_yesterday.empty:
-            st.warning("No shops found for the selected filter criteria.")
 
-        # Streamlit header for the table
-        st.markdown("### Weekly Overview")
+with tab5:
 
-        # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
-        weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
-            TotalHours=('TotalHours', 'sum'),
-            BlockedHours=('BlockedHours', 'sum'),
-            AvailableHours=('AvailableHours', 'sum'),
-            BookedHours=('BookedHours', 'sum'),
-            OpenHours=('OpenHours', 'sum')
-        ).reset_index()
+    if weekly_shift_slots.empty:
+        st.warning("No shops found for the selected filter criteria.")
+    if weekly_shift_slots_yesterday.empty:
+        st.warning("No shops found for the selected filter criteria.")
 
-        weekly_aggregated = weekly_aggregated.fillna(0)
+    # New Time Series for HCM and SF Difference over ISO Weeks
+    st.markdown("### Overview")
 
-    # Step 2: Compute the percentage change week-over-week using numpy where
-        def calculate_pct_change_vectorized(current, previous):
-            return np.where(previous == 0, 0, np.where(current == previous, 0, (current - previous) / abs(previous) * 100))
+    # Step 1: Group filtered_hcm by 'iso_week' and sum 'Diferencia de hcm duración'
+    hcm_weekly_diff = filtered_hcm.groupby('iso_week').agg(
+        total_diff=('Diferencia de hcm duración', 'sum')
+    ).reset_index()
 
-        # Apply the percentage change calculation across each column and handle NaN using np.nan_to_num
-        weekly_aggregated['TotalHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
-            weekly_aggregated['TotalHours'], weekly_aggregated['TotalHours'].shift(1).fillna(0)
-        ))
+    # Step 2: Create an interactive time series graph using Plotly
+    fig_diff = px.line(
+        hcm_weekly_diff,
+        x='iso_week',  # The ISO week number
+        y='total_diff',  # The total difference
+        labels={'iso_week': 'ISO Week', 'total_diff': 'Total Difference (HCM vs SF)'},  # Axis labels
+        title="HCM vs SF Duration Difference Over Weeks",
+        markers=True  # Add markers to the line chart
+    )
 
-        weekly_aggregated['BlockedHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
-            weekly_aggregated['BlockedHours'], weekly_aggregated['BlockedHours'].shift(1).fillna(0)
-        ))
+    # Step 3: Customize the layout for better readability
+    fig_diff.update_layout(
+        xaxis_title="Week Number",  # Label for X-axis
+        yaxis_title="Total Difference",  # Label for Y-axis
+        hovermode="x unified"  # Show all values for the x-coordinate when hovering
+    )
 
-        weekly_aggregated['AvailableHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
-            weekly_aggregated['AvailableHours'], weekly_aggregated['AvailableHours'].shift(1).fillna(0)
-        ))
+    # Step 4: Update the hover template to show detailed information
+    fig_diff.update_traces(
+        hovertemplate='ISO Week: %{x}<br>Total Difference: %{y:.2f}'
+    )
 
-        weekly_aggregated['BookedHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
-            weekly_aggregated['BookedHours'], weekly_aggregated['BookedHours'].shift(1).fillna(0)
-        ))
+    # Step 5: Display the Plotly chart in Streamlit
+    st.plotly_chart(fig_diff, use_container_width=True)
 
-        weekly_aggregated['OpenHours % Change'] = np.nan_to_num(calculate_pct_change_vectorized(
-        weekly_aggregated['OpenHours'], weekly_aggregated['OpenHours'].shift(1).fillna(0)
-        ))
+    # Step 1: Group filtered_clock by 'iso_week' and sum 'Diferencia de act duración'
+    acd_weekly_diff = filtered_clock.groupby('Date').agg(
+        total_diff=('Diferencia de act duración', 'sum')
+    ).reset_index()
 
-        weekly_aggregated.set_index('iso_week', inplace=True)
-        transposed_weekly_aggregated = weekly_aggregated.T
-        # Step 1: Separate the total figures
-        totals_table = transposed_weekly_aggregated.loc[['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours', 'OpenHours']]
+    # Step 2: Create an interactive time series graph using Plotly
+    fig_acd_diff = px.line(
+        acd_weekly_diff,
+        x='Date',  # The ISO week number
+        y='total_diff',  # The total difference
+        labels={'Date': 'Day', 'total_diff': 'Total Difference (ACT vs SF)'},  # Axis labels
+        title="ACT vs SF Duration Difference Over Weeks",
+        markers=True  # Add markers to the line chart
+    )
 
-        # Step 2: Separate the percentage changes
-        percentages_table = transposed_weekly_aggregated.loc[['TotalHours % Change', 'BlockedHours % Change','AvailableHours % Change', 'BookedHours % Change', 'OpenHours % Change']]
+    # Step 3: Customize the layout for better readability
+    fig_acd_diff.update_layout(
+        xaxis_title="Day",  # Label for X-axis
+        yaxis_title="Total Difference",  # Label for Y-axis
+        hovermode="x unified"  # Show all values for the x-coordinate when hovering
+    )
 
-        # Convert iso_week to a string and rename columns to 'Week {iso_week}'
-        totals_table.columns = [f"Week {int(col)}" for col in totals_table.columns.get_level_values(0)]
-        percentages_table.columns = [f"Week {int(col)}" for col in percentages_table.columns.get_level_values(0)]
+    # Step 4: Update the hover template to show detailed information
+    fig_acd_diff.update_traces(
+        hovertemplate='Day: %{x}<br>Total Difference: %{y:.2f}'
+    )
 
-        # Custom CSS for the table (same as Tab 2, adjusted if needed)
-        custom_css_tab5 = {
-            ".ag-header-cell": {
-                "background-color": "#cc0641 !important",  
-                "color": "white !important",
-                "font-weight": "bold",
-                "padding": "4px"
-            },
-            ".ag-cell": {
-                "padding": "2px",
-                "font-size": "12px"
-            },
-            ".ag-header": {
-                "height": "35px"
-            },
-            ".ag-theme-streamlit .ag-row": {
-                "max-height": "30px"
-            },
-            ".ag-theme-streamlit .ag-root-wrapper": {
-                "border": "2px solid #cc0641",
-                "border-radius": "5px"
-            }
+    # Step 5: Display the Plotly chart in Streamlit
+    st.plotly_chart(fig_acd_diff, use_container_width=True)
+    # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
+    weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
+        TotalHours=('TotalHours', 'sum'),
+        BlockedHours=('BlockedHours', 'sum'),
+        AvailableHours=('AvailableHours', 'sum'),
+        BookedHours=('BookedHours', 'sum'),
+        OpenHours=('OpenHours', 'sum')
+    ).reset_index()
+
+    weekly_aggregated = weekly_aggregated.fillna(0)
+
+    # Create an interactive time series graph with Plotly
+    fig = px.line(
+        weekly_aggregated, 
+        x='iso_week',  
+        y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours', 'OpenHours'],
+        labels={'iso_week': 'ISO Week', 'value': 'Hours'},  
+        title="Weekly Hours Overview",
+        markers=True  
+    )
+
+    # Customize the layout for better readability
+    fig.update_layout(
+        xaxis_title="Week Number",  
+        yaxis_title="Hours", 
+        hovermode="x unified"  
+    )
+
+    fig.update_traces(
+        hovertemplate='%{y:,.0f} Hours<br>ISO Week: %{x}'
+    )
+
+    # Display the plotly graph in Streamlit
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("### Tiendas que necesitan atención urgente (Para Hoy)")
+
+    # Get today's date
+    today = datetime.now().date()
+
+    # Convert the 'date' column to datetime
+    weekly_shift_slots['date'] = pd.to_datetime(weekly_shift_slots['date'], format='%Y-%m-%d')
+
+    # Step 1: Filter the dataset to include necessary columns for today
+    filtered_data = weekly_shift_slots[weekly_shift_slots['date'].dt.date == today][['Region', 'Shop[Name]', 'BlockedHoursPercentage']].copy()
+
+    # Sort by region and by highest BlockedHoursPercentage
+    top_shops_by_region = (
+        filtered_data.sort_values(by='BlockedHoursPercentage', ascending=False)
+        .groupby('Region')
+        .head(4)  # Get top 4 shops per region
+    )
+
+    # Get unique regions
+    regions = top_shops_by_region['Region'].unique()
+
+    # Custom CSS for styling the boxes and the shop list
+    st.markdown("""
+        <style>
+        .custom-box {
+            border: 2px solid #cc0641;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+            text-align: center;
+            width: 100%;
+            box-sizing: border-box;
         }
-        js_code_tab5_pct_change = JsCode("""
-        function(params) {
-            // Get the field name
-            var field = params.colDef.field;
-            
-            // Get the percentage change values for the current data row
-            var blockedHoursPctChange = params.data['BlockedHours % Change'];
-            var pctChangeValue = params.data[field];
-
-            if (field === 'BlockedHours % Change') {
-                if (blockedHoursPctChange <= 0) {
-                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative or zero BlockedHours % Change
-                } else if (blockedHoursPctChange > 0) {
-                    return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive BlockedHours % Change
-                }
-                return null;  // Default styling for zero BlockedHours % Change
-            }
-
-            // Apply general styling for all other percentage change columns
-            if (pctChangeValue >= 0) {
-                return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for positive percentage change
-            } else if (pctChangeValue < 0) {
-                return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for negative percentage change
-            }
-
-            return null;  // Default styling for zero or undefined percentage change
+        .custom-box h5 {
+            color: #cc0641;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
         }
-        """)
+        .shop-list {
+            margin-top: 10px;
+            text-align: left;
+            line-height: 1.6;  /* Increased line height for readability */
+        }
+        .shop-list p {
+            font-size: 14px;
+            margin: 0;
+        }
+        .shop-list strong {
+            color: #333;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
+    # Create 4 columns to display 4 regions in one row
+    cols = st.columns(4)
 
-        # Ensure that the pivot tables include the Metric column
-        pivot_total = totals_table.reset_index().rename(columns={'index': 'Metric'})
-        pivot_pct_change = percentages_table.reset_index().rename(columns={'index': 'Metric'})
-        # Create column definitions for total hours table
-        columnDefs_tab5_total = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
-        columnDefs_tab5_pct_change = [{"field": 'Metric', "headerName": "Metric", "resizable": True, "flex": 1}]
+    # Iterate over regions and display them in the respective column
+    for i, region in enumerate(regions):
+        with cols[i % 4]:  # Ensure 4 regions per row
+            # Start the custom box div and shop list inside it
+            top_shops = top_shops_by_region[top_shops_by_region['Region'] == region]
 
-        # Add week columns for totals
-        for column in pivot_total.columns[1:]:
-            columnDefs_tab5_total.append({
-                "field": column,
-                "headerName": column,  # Use 'Week {iso_week}' as the header
-                "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) : '0')",
-                "resizable": True,
-                "flex": 1
-            })
+            shop_list = ""
+            for index, row in top_shops.iterrows():
+                shop_name = row['Shop[Name]']
+                blocked_pct = row['BlockedHoursPercentage']
+                
+                # Append shop details to the list
+                shop_list += f"<p>- <strong>{shop_name}</strong>: {blocked_pct:,.0f}% Blocked Hours</p>"
 
-        # Add week columns for percentages
-        for column in pivot_pct_change.columns[2:]:
-            columnDefs_tab5_pct_change.append({
-                "field": column,
-                "headerName": column,  # Use 'Week {iso_week}' as the header
-                "valueFormatter": "(x !== null && x !== undefined ? x.toFixed(1) + ' %' : '0 %')", 
-                "resizable": True,
-                "flex": 1,
-                "cellStyle": js_code_tab5_pct_change  # Apply the specific function for the percentage table
-            })
+            # Render both the header and the shop list inside the box
+            st.markdown(f"""
+            <div class="custom-box">
+                <h5>{region}</h5>
+                <div class="shop-list">
+                    {shop_list}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        # Configure GridOptionsBuilder for both tables
-        gb_tab5_total = GridOptionsBuilder.from_dataframe(pivot_total)
-        gb_tab5_pct_change = GridOptionsBuilder.from_dataframe(pivot_pct_change)
+    st.markdown("### Tiendas Cerradas (Para Hoy)")
 
+    # Step 1: Filter the dataset for closed shops (TotalHours = 0 or BlockedHoursPercentage = 100%)
+    closed_shops_data = weekly_shift_slots[
+        (weekly_shift_slots['date'].dt.date == today) &
+        ((weekly_shift_slots['TotalHours'] == 0) | (weekly_shift_slots['BlockedHoursPercentage'] == 100))
+    ][['Region', 'Shop[Name]', 'TotalHours', 'BlockedHoursPercentage']].copy()
 
-        for col in pivot_pct_change.columns:  # For the percentage change table
-            gb_tab5_pct_change.configure_column(col, cellStyle=js_code_tab5_pct_change)
+    # Sort by region
+    closed_shops_data = closed_shops_data.sort_values(by='Region')
 
-        # Grid options for auto-sizing and responsive layout
-        gb_tab5_total.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
-        gb_tab5_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
+    # Get unique regions with closed shops
+    regions_with_closed_shops = closed_shops_data['Region'].unique()
 
-        # Build grid options
-        grid_options_tab5_total = gb_tab5_total.build()
-        grid_options_tab5_pct_change = gb_tab5_pct_change.build()
+    # Custom CSS for styling the boxes and the shop list (same style as before)
+    st.markdown("""
+        <style>
+        .custom-box {
+            border: 2px solid #cc0641;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+            text-align: center;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .custom-box h5 {
+            color: #cc0641;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        .shop-list {
+            margin-top: 10px;
+            text-align: left;
+            line-height: 1.6;  /* Increased line height for readability */
+        }
+        .shop-list p {
+            font-size: 14px;
+            margin: 0;
+        }
+        .shop-list strong {
+            color: #333;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-        # Add custom column definitions to grid options
-        grid_options_tab5_total['columnDefs'] = columnDefs_tab5_total
-        grid_options_tab5_pct_change['columnDefs'] = columnDefs_tab5_pct_change
-
-        # Render both pivot_total and pivot_pct_change tables using AgGrid
-        try:
-            st.markdown("### Percentage Change Overview")
-            AgGrid(
-                pivot_pct_change,
-                gridOptions=grid_options_tab5_pct_change,
-                enable_enterprise_modules=True,
-                allow_unsafe_jscode=True,  # Allow JavaScript code execution
-                fit_columns_on_grid_load=True,
-                height=185,  # Set grid height for percentage change table
-                width='100%',
-                theme='streamlit',
-                custom_css=custom_css_tab5
-            )
-        except Exception as ex:
-            st.error(f"An error occurred: {ex}")
+    # Split regions into groups of 4 (for displaying in 4 columns per row)
+    for start_idx in range(0, len(regions_with_closed_shops), 4):
+        cols_closed = st.columns(4)  # Create 4 columns for this row
         
-
-        # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
-        weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
-            TotalHours=('TotalHours', 'sum'),
-            BlockedHours=('BlockedHours', 'sum'),
-            AvailableHours=('AvailableHours', 'sum'),
-            BookedHours=('BookedHours', 'sum'),
-            OpenHours=('OpenHours', 'sum')
-        ).reset_index()
-
-        weekly_aggregated = weekly_aggregated.fillna(0)
-
-        # Create an interactive time series graph with Plotly
-        fig = px.line(
-            weekly_aggregated, 
-            x='iso_week',  
-            y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours', 'OpenHours'],
-            labels={'iso_week': 'ISO Week', 'value': 'Hours'},  
-            title="Weekly Hours Overview",
-            markers=True  
-        )
-
-        # Customize the layout for better readability
-        fig.update_layout(
-            xaxis_title="Week Number",  
-            yaxis_title="Hours", 
-            hovermode="x unified"  
-        )
-
-        fig.update_traces(
-            hovertemplate='%{y:,.0f} Hours<br>ISO Week: %{x}'
-        )
-
-        # Display the plotly graph in Streamlit
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("### Tiendas que necesitan atención urgente (Para Hoy)")
-
-        # Get today's date
-        today = datetime.now().date()
-
-        # Convert the 'date' column to datetime
-        weekly_shift_slots['date'] = pd.to_datetime(weekly_shift_slots['date'], format='%Y-%m-%d')
-
-        # Step 1: Filter the dataset to include necessary columns for today
-        filtered_data = weekly_shift_slots[weekly_shift_slots['date'].dt.date == today][['Region', 'Shop[Name]', 'BlockedHoursPercentage']].copy()
-
-        # Sort by region and by highest BlockedHoursPercentage
-        top_shops_by_region = (
-            filtered_data.sort_values(by='BlockedHoursPercentage', ascending=False)
-            .groupby('Region')
-            .head(4)  # Get top 4 shops per region
-        )
-
-        # Get unique regions
-        regions = top_shops_by_region['Region'].unique()
-
-        # Custom CSS for styling the boxes and the shop list
-        st.markdown("""
-            <style>
-            .custom-box {
-                border: 2px solid #cc0641;
-                border-radius: 10px;
-                padding: 15px;
-                margin-bottom: 10px;
-                background-color: #f9f9f9;
-                text-align: center;
-                width: 100%;
-                box-sizing: border-box;
-            }
-            .custom-box h5 {
-                color: #cc0641;
-                font-size: 18px;
-                font-weight: bold;
-                margin-bottom: 10px;
-                text-transform: uppercase;
-            }
-            .shop-list {
-                margin-top: 10px;
-                text-align: left;
-                line-height: 1.6;  /* Increased line height for readability */
-            }
-            .shop-list p {
-                font-size: 14px;
-                margin: 0;
-            }
-            .shop-list strong {
-                color: #333;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
-        # Create 4 columns to display 4 regions in one row
-        cols = st.columns(4)
-
-        # Iterate over regions and display them in the respective column
-        for i, region in enumerate(regions):
-            with cols[i % 4]:  # Ensure 4 regions per row
-                # Start the custom box div and shop list inside it
-                top_shops = top_shops_by_region[top_shops_by_region['Region'] == region]
+        # Display up to 4 regions in the current row
+        for i, region in enumerate(regions_with_closed_shops[start_idx:start_idx + 4]):
+            with cols_closed[i]:  # Ensure 4 regions per row
+                # Filter the data for the current region
+                closed_shops = closed_shops_data[closed_shops_data['Region'] == region]
 
                 shop_list = ""
-                for index, row in top_shops.iterrows():
+                for index, row in closed_shops.iterrows():
                     shop_name = row['Shop[Name]']
+                    total_hours = row['TotalHours']
                     blocked_pct = row['BlockedHoursPercentage']
-                    
+
                     # Append shop details to the list
-                    shop_list += f"<p>- <strong>{shop_name}</strong>: {blocked_pct:,.0f}% Blocked Hours</p>"
+                    shop_list += f"<p>- <strong>{shop_name}</strong>: {total_hours} Hours, {blocked_pct:,.0f}% Blocked</p>"
 
                 # Render both the header and the shop list inside the box
                 st.markdown(f"""
@@ -1397,93 +1369,16 @@ with tab3:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-
-        st.markdown("### Tiendas Cerradas (Para Hoy)")
-
-        # Step 1: Filter the dataset for closed shops (TotalHours = 0 or BlockedHoursPercentage = 100%)
-        closed_shops_data = weekly_shift_slots[
-            (weekly_shift_slots['date'].dt.date == today) &
-            ((weekly_shift_slots['TotalHours'] == 0) | (weekly_shift_slots['BlockedHoursPercentage'] == 100))
-        ][['Region', 'Shop[Name]', 'TotalHours', 'BlockedHoursPercentage']].copy()
-
-        # Sort by region
-        closed_shops_data = closed_shops_data.sort_values(by='Region')
-
-        # Get unique regions with closed shops
-        regions_with_closed_shops = closed_shops_data['Region'].unique()
-
-        # Custom CSS for styling the boxes and the shop list (same style as before)
-        st.markdown("""
-            <style>
-            .custom-box {
-                border: 2px solid #cc0641;
-                border-radius: 10px;
-                padding: 15px;
-                margin-bottom: 10px;
-                background-color: #f9f9f9;
-                text-align: center;
-                width: 100%;
-                box-sizing: border-box;
-            }
-            .custom-box h5 {
-                color: #cc0641;
-                font-size: 18px;
-                font-weight: bold;
-                margin-bottom: 10px;
-                text-transform: uppercase;
-            }
-            .shop-list {
-                margin-top: 10px;
-                text-align: left;
-                line-height: 1.6;  /* Increased line height for readability */
-            }
-            .shop-list p {
-                font-size: 14px;
-                margin: 0;
-            }
-            .shop-list strong {
-                color: #333;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
-        # Split regions into groups of 4 (for displaying in 4 columns per row)
-        for start_idx in range(0, len(regions_with_closed_shops), 4):
-            cols_closed = st.columns(4)  # Create 4 columns for this row
-            
-            # Display up to 4 regions in the current row
-            for i, region in enumerate(regions_with_closed_shops[start_idx:start_idx + 4]):
-                with cols_closed[i]:  # Ensure 4 regions per row
-                    # Filter the data for the current region
-                    closed_shops = closed_shops_data[closed_shops_data['Region'] == region]
-
-                    shop_list = ""
-                    for index, row in closed_shops.iterrows():
-                        shop_name = row['Shop[Name]']
-                        total_hours = row['TotalHours']
-                        blocked_pct = row['BlockedHoursPercentage']
-
-                        # Append shop details to the list
-                        shop_list += f"<p>- <strong>{shop_name}</strong>: {total_hours} Hours, {blocked_pct:,.0f}% Blocked</p>"
-
-                    # Render both the header and the shop list inside the box
-                    st.markdown(f"""
-                    <div class="custom-box">
-                        <h5>{region}</h5>
-                        <div class="shop-list">
-                            {shop_list}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    
 # Format the month_start_date as a string like "October 1"
-
-formatted_month_start_date = month_start_date.strftime("%B %#d").lstrip('0')
 
 with tab6:
     if weekly_shift_slots.empty:
         st.warning("No shops found for the selected filter criteria.")
     if weekly_shift_slots_yesterday.empty:
         st.warning("No shops found for the selected filter criteria.")
+    
+    formatted_month_start_date = month_start_date.strftime("%B %#d").lstrip('0')
 
     st.markdown("### Weekly Overview")
     # Add a new selectbox for comparison options
