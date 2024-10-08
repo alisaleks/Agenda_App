@@ -361,18 +361,6 @@ weekly_shift_sep6 = filter_hcp_shift_slots(shift_slots_sep6, selected_region, se
 # Apply the filters to HCM data (without iso_week filter)
 filtered_hcm = filter_hcm_data(hcm, selected_region, selected_area, selected_shop)
 filtered_clock = filter_data(clock,iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
-# Check if filtered data is empty after applying the filters
-if filtered_data.empty:
-    st.warning("No shops found for the selected filter criteria.")
-# Check if filtered data is empty after applying the filters
-if filtered_hcp_shift_slots.empty:
-    st.warning("No shops found for the selected filter criteria.")
-if filtered_hcm.empty:
-    st.warning("No shops found for the selected filter criteria.") 
-if weekly_shift_slots.empty:
-    st.warning("No shops found for the selected filter criteria.")
-if weekly_shift_slots_yesterday.empty:
-    st.warning("No shops found for the selected filter criteria.")
 
 # Filter data for the previous ISO week without applying the current filters (directly from shift_slots)
 previous_week_data = shift_slots[
@@ -431,7 +419,10 @@ hcp_data = filtered_hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceRes
 
 tab6, tab1, tab2,tab4, tab3,tab5 = st.tabs(["Weekly Change Analysis", "Open Hours / Total Hours", "Blocked Hours %", "HCM vs SF", "ACT vs SF","REX"])
 
-with tab1:    
+with tab1: 
+    if aggregated_data.empty:
+        st.warning("No shops found for the selected filter criteria.")
+
     st.markdown(''':green[ *****Total Hours***: Todos los turnos configurados*]''')
     st.markdown(''':green[ *****Open Hours***: Turnos abiertos luego de descontar horas bloqueadas y horas de cita*]''')
 
@@ -593,6 +584,9 @@ with tab1:
         st.error(f"An error occurred: {ex}")
 
 with tab2:
+    if aggregated_data.empty:
+        st.warning("No shops found for the selected filter criteria.")
+    
     st.markdown(''':green[ **Horas bloqueadas que no se superponen con ninguna cita y tienen turnos configurados*]''')
 
     # Adjust the pivot table to use BlockedHoursPercentage
@@ -730,7 +724,9 @@ with tab2:
 with tab4:
     url1 = "https://amplifongroup.service-now.com/esc?id=esc_dashboard"
     url2 = "https://amplifongroup.service-now.com/sp_amp?id=sc_category_amp&sys_id=9ddfb4d3db96209072ccbb13f3961918"
-    
+    if filtered_hcm.empty:
+        st.warning("No shops found for the selected filter criteria.")
+
     st.markdown(f'''
     :green[*Esta vista os puede ayudar para identificar rápidamente dónde cada AP tiene horas asignadas dentro de vuestra área, facilitando el control del negocio en caso de movimientos temporales entre tiendas, por ejemplo. Si vosotros o HRBP necesitais abrir un ticket (HR Ops o Suporte) podeis hacerlo a traves de los siguientes enlances:*]
     - [Abrir Ticket por HR]({url1})
@@ -1108,6 +1104,12 @@ with tab3:
     )
 
     with tab5:
+
+        if weekly_shift_slots.empty:
+            st.warning("No shops found for the selected filter criteria.")
+        if weekly_shift_slots_yesterday.empty:
+            st.warning("No shops found for the selected filter criteria.")
+
         # Streamlit header for the table
         st.markdown("### Weekly Overview")
 
@@ -1478,6 +1480,11 @@ with tab3:
 formatted_month_start_date = month_start_date.strftime("%B %#d").lstrip('0')
 
 with tab6:
+    if weekly_shift_slots.empty:
+        st.warning("No shops found for the selected filter criteria.")
+    if weekly_shift_slots_yesterday.empty:
+        st.warning("No shops found for the selected filter criteria.")
+
     st.markdown("### Weekly Overview")
     # Add a new selectbox for comparison options
     comparison_options = [f'Comparison with start of the month ({formatted_month_start_date})', 'Comparison with yesterday']
