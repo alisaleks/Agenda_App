@@ -911,7 +911,7 @@ with tab4:
         custom_css=custom_css  # Apply custom CSS
     )
 with tab3:
-    st.markdown(''':green[ **Los datos de entrada y salida están disponibles a partir del 3 de septiembre*]''')
+    st.markdown(''':green[ **Los datos de entrada y salida están disponibles a partir del 3 de septiembre. Los turnos de SF se ajustan por bloqueos/ausencias*]''')
     st.markdown(''':green[ **Todos los audiólogos que no hayan registrado su salida estarán marcados como NC (No completo) para el día.*]''')
     
     # Pivot the table for Tab 3
@@ -927,10 +927,10 @@ with tab3:
     pivot_table_tab3 = filtered_clock.pivot_table(
         index=['Resource Name', 'Shop[Name]'],
         columns=['Date', 'weekday'],
-        values=['hours_worked', 'ShiftDurationHours', 'Diferencia de act duración'],
+        values=['hours_worked', 'ShiftDurationHoursAdjusted', 'Diferencia de act duración'],
         aggfunc={
             'hours_worked': custom_agg_hours,
-            'ShiftDurationHours': 'sum',
+            'ShiftDurationHoursAdjusted': 'sum',
             'Diferencia de act duración': 'sum'
         },
         fill_value=0
@@ -941,7 +941,7 @@ with tab3:
     ] 
     pivot_table_tab3_reset = pivot_table_tab3.reset_index()
     # Format all numeric columns to one decimal point
-    numeric_columns_in_pivot_tab3 = [col for col in pivot_table_tab3_reset.columns if 'hours_worked' in col or 'ShiftDurationHours' in col or 'Diferencia de act duración' in col]
+    numeric_columns_in_pivot_tab3 = [col for col in pivot_table_tab3_reset.columns if 'hours_worked' in col or 'ShiftDurationHoursAdjusted' in col or 'Diferencia de act duración' in col]
     pivot_table_tab3_reset[numeric_columns_in_pivot_tab3] = pivot_table_tab3_reset[numeric_columns_in_pivot_tab3].round(1)
     # Create the DataFrame for AgGrid
     df_tab3 = pivot_table_tab3_reset
@@ -968,7 +968,7 @@ with tab3:
                 return styles;
             }
 
-            var deltaField = params.colDef.field.replace('ShiftDurationHours', 'Diferencia_de_act_duración')
+            var deltaField = params.colDef.field.replace('ShiftDurationHoursAdjusted', 'Diferencia_de_act_duración')
                                                 .replace('hours_worked', 'Diferencia_de_act_duración');
             var deltaValue = params.data[deltaField];
             if (deltaValue === 0) {
@@ -1025,23 +1025,23 @@ with tab3:
     ]
 
 
-    # Append dynamic column definitions for SF (ShiftDurationHours), ACT (hours_worked), and Delta (Diferencia de act duración)
+    # Append dynamic column definitions for SF (ShiftDurationHoursAdjusted), ACT (hours_worked), and Delta (Diferencia de act duración)
     for column in df_tab3.columns[2:]:  # Start from 2 to skip Resource_Name and Shop[Name]
-        if 'ShiftDurationHours' in column:
+        if 'ShiftDurationHoursAdjusted' in column:
             headerName = column.split('_')[1] + ' (' + column.split('_')[2] + ')'
             columnDefs.append({
                 "headerName": headerName,
                 "children": [
                     {
                         "field": column,
-                        "headerName": "SF",  # ShiftDurationHours
+                        "headerName": "SF",  # ShiftDurationHoursAdjusted
                         "valueFormatter": "x.toFixed(1)",
                         "resizable": True,
                         "flex": 1,
                         "cellStyle": js_code
                     },
                     {
-                        "field": column.replace('ShiftDurationHours', 'hours_worked'),
+                        "field": column.replace('ShiftDurationHoursAdjusted', 'hours_worked'),
                         "headerName": "ACT",  # hours_worked
                         "valueFormatter": "x.toFixed(1)",
                         "resizable": True,
@@ -1049,7 +1049,7 @@ with tab3:
                         "cellStyle": js_code
                     },
                     {
-                        "field": column.replace('ShiftDurationHours', 'Diferencia_de_act_duración'),
+                        "field": column.replace('ShiftDurationHoursAdjusted', 'Diferencia_de_act_duración'),
                         "headerName": "Delta",  # Diferencia de act duración
                         "valueFormatter": "x.toFixed(1)",
                         "resizable": True,
