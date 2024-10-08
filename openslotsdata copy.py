@@ -1200,6 +1200,10 @@ clock.columns
 #clock['ID RH'] = clock['ID RH'].astype(str).str.strip()
 # Convert to string, handling NaN and removing any .0 from floats
 clock['ID RH'] = clock['ID RH'].astype(str).replace(r'\.0$', '', regex=True).replace('nan', '')
+clock['ID RH'] 
+clock = clock[clock['Nombre puesto'] != 'COUNTRY CLIENT ADVISOR']
+clock = clock[clock['ID RH'] != '52363']
+clock = clock[clock['ID RH'] != '41959']
 
 # Assuming 'df' is the DataFrame and 'Id.Empleado' is the column to check for duplicates
 duplicates = clock[clock.duplicated(subset=['ID RH', 'Fecha y hora fichaje/declarac.'], keep=False)]
@@ -1265,6 +1269,7 @@ clock_in['hours_worked'] = clock_in.apply(
     axis=1
 )
 
+
 # Replace 'NC' with 0 and convert to float explicitly
 clock_in['hours_worked_numeric'] = clock_in['hours_worked'].replace('NC', 0)
 clock_in['hours_worked_numeric'] = clock_in['hours_worked_numeric'].astype(float)
@@ -1312,13 +1317,17 @@ print(total_hours_per_employee[total_hours_per_employee['Shop Name'] == "L'HOSPI
 total_hours_per_employee=total_hours_per_employee[total_hours_per_employee['SYM']=='Y']
 total_hours_per_employee['ISO Year'] = total_hours_per_employee['Fecha y hora fichaje'].dt.isocalendar().year
 total_hours_per_employee['ISO Week'] = total_hours_per_employee['Fecha y hora fichaje'].dt.isocalendar().week
+total_hours_per_employee['CompositeKey'] = total_hours_per_employee['CODE'] + '_' + total_hours_per_employee['ID RH'].astype(str) + '_' + total_hours_per_employee['ISO Year'].astype(str) + '_' + total_hours_per_employee['ISO Week'].astype(str)
+total_hours_per_employee['PersonalNumberKey'] = total_hours_per_employee['CODE'] + '_' + total_hours_per_employee['ID RH'].astype(str)
 total_hours_per_employee['Fecha y hora fichaje'] = pd.to_datetime(total_hours_per_employee['Fecha y hora fichaje'])
 total_hours_per_employee['Date'] = total_hours_per_employee['Fecha y hora fichaje'].dt.date
+
 # Group by with the new column and sum it, while keeping the original 'hours_worked' column
 total_hours_per_employee_daily = total_hours_per_employee.groupby(
-    ['Date', 'ID RH'], as_index=False
+    ['Date', 'PersonalNumberKey'], as_index=False
 ).agg({
     'hours_worked_numeric': 'sum',  # Summing the hours worked, with 'NC' as 0
+    'ID RH': 'first',       
     'Shop Name': 'first',   
     'CODE': 'first',        
     'REGION': 'first',
@@ -1337,34 +1346,36 @@ total_hours_per_employee_daily['hours_worked'] = total_hours_per_employee_daily.
 total_hours_per_employee_daily.drop(columns='is_nc', inplace=True)
 total_hours_per_employee_daily[['hours_worked_numeric', 'hours_worked']].head()
 total_hours_per_employee_daily.columns
-# Filter for the specific Resource number and Date
+# Filter for the specific PersonalNumberKey and Date
 check_data = total_hours_per_employee_daily[(total_hours_per_employee_daily['ID RH'] == '41884') & (total_hours_per_employee_daily['Date'] == pd.to_datetime('2024-10-07').date())]
 # Display the relevant columns for verification
-check_data[['Date', 'hours_worked', 'hours_worked_numeric']]
+check_data[['Date', 'PersonalNumberKey', 'hours_worked', 'hours_worked_numeric']]
 
 total_hours_per_employee_daily['Date'] = pd.to_datetime(total_hours_per_employee_daily['Date']).dt.date
 sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate']).dt.date
 sfshifts_merged[sfshifts_merged['PersonalNumberKey'] == '003_11126'].head()
-sfshifts_merged['PersonalNumber'] = sfshifts_merged['PersonalNumberKey'].str[4:]
+
 # Step 4: Merge both datasets (without region/area/shop data yet)
 clockin_merged = pd.merge(
-    total_hours_per_employee_daily[['ID RH', 'Date', 'hours_worked', 'hours_worked_numeric']], 
-    sfshifts_merged[['PersonalNumber', 'GT_ServiceResource__r.Name', 'ShiftDate', 'ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']],
-    left_on=['ID RH', 'Date'],    
-    right_on=['PersonalNumber', 'ShiftDate'], 
+    total_hours_per_employee_daily[['PersonalNumberKey', 'Date', 'hours_worked', 'hours_worked_numeric']], 
+    sfshifts_merged[['PersonalNumberKey', 'GT_ServiceResource__r.Name', 'ShiftDate', 'ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']],
+    left_on=['PersonalNumberKey', 'Date'],    
+    right_on=['PersonalNumberKey', 'ShiftDate'], 
     how='outer', 
     suffixes=('_sf', '_act'), 
     indicator=True 
 )
+clockin_merged['PersonalNumber'] = clockin_merged['PersonalNumberKey'].str[4:]
+clockin_merged['ShopCode'] = clockin_merged['PersonalNumberKey'].str[:3]
 clockin_merged.head()
 clockin_merged = pd.merge(
     clockin_merged,
-    hcm_map[['PersonalNumber', 'ServiceResourceName SF','PersonalNumber SF']],
+    hcm_map[['PersonalNumber', 'ServiceResourceName SF']],
     left_on='PersonalNumber',
     right_on='PersonalNumber',
     how='left'
 )
-clockin_merged['ShopCode'] = clockin_merged['PersonalNumber SF'].str[:3]
+
 clockin_merged = pd.merge(
     clockin_merged,
     region_mapping[['CODE', 'AREA','REGION', 'DESCR','SYM']],  # Include Region, Area, and Shop[Name]
@@ -1373,7 +1384,6 @@ clockin_merged = pd.merge(
     how='left'
 )
 clockin_merged = clockin_merged[clockin_merged['SYM']=='Y']
-clockin_merged.columns
 clockin_merged[[ 'hours_worked','ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']] = clockin_merged[['hours_worked','ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']].fillna(0)
 # Now you can check for missing values again if needed
 clockin_merged['Resource Name'] = clockin_merged['ServiceResourceName SF'].fillna(clockin_merged['GT_ServiceResource__r.Name'])
@@ -1382,8 +1392,9 @@ clockin_merged['Date'] = clockin_merged['Date'].fillna(clockin_merged['ShiftDate
 clockin_merged['Date'] = pd.to_datetime(clockin_merged['Date'])
 clockin_merged['weekday'] = clockin_merged['Date'].dt.day_name()
 clockin_merged['iso_week'] = clockin_merged['Date'].dt.isocalendar().week
-missing_rows_after_fill = clockin_merged[clockin_merged['Resource Name'].isna()]
 
+missing_rows_after_fill = clockin_merged[clockin_merged['Resource Name'].isna()]
+missing_rows_after_fill
 clockin_merged.columns
 clockin_merged.rename(columns={
     'ShopCode': 'Shop Code',
@@ -1392,12 +1403,12 @@ clockin_merged.rename(columns={
     'AREA': 'Area',
     'DESCR':'Shop[Name]',
 }, inplace=True)
-clockin_merged.drop(columns=['GT_ServiceResource__r.Name', 'ServiceResourceName SF', '_merge', 'SYM', 'ID RH'], inplace=True)
+clockin_merged.drop(columns=['GT_ServiceResource__r.Name', 'ServiceResourceName SF', '_merge', 'SYM'], inplace=True)
 clockin_merged['Diferencia de act duración'] = clockin_merged['ShiftDurationHoursAdjusted'].fillna(0) - clockin_merged['hours_worked_numeric'].fillna(0)
 clockin_merged[['hours_worked_numeric', 'hours_worked']].head() 
 
-clockin_merged = clockin_merged.drop_duplicates(subset=['PersonalNumber', 'Date'])
-duplicates = clockin_merged[clockin_merged.duplicated(subset=['PersonalNumber', 'Date'])]
+clockin_merged = clockin_merged.drop_duplicates(subset=['PersonalNumberKey', 'Date'])
+duplicates = clockin_merged[clockin_merged.duplicated(subset=['PersonalNumberKey', 'Date'])]
 duplicates
 output_file_path3 = 'clock.xlsx'
 clockin_merged.to_excel(output_file_path3, index=False, engine='openpyxl')
