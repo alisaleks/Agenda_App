@@ -909,7 +909,8 @@ with tab4:
         custom_css=custom_css  # Apply custom CSS
     )
 with tab3:
-    st.markdown(''':green[ **Los datos de entrada y salida están disponibles a partir del 3 de septiembre. Los turnos de SF se ajustan por bloqueos/ausencias*]''')
+    st.markdown(''':green[ **Las horas reales trabajadas se suman a todas las tiendas por audiólogo. La tienda que se muestra es solo una de las tiendas en las que está registrado el audiólogo.*]''')
+    st.markdown(''':green[ **Los datos de entrada y salida están disponibles a partir del 3 de septiembre. Los turnos de SF se ajustan por bloqueos/ausencias.*]''')
     st.markdown(''':green[ **Todos los audiólogos que no hayan registrado su salida estarán marcados como NC (No completo) para el día.*]''')
 
     if filtered_clock.empty:
