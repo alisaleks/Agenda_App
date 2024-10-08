@@ -368,9 +368,7 @@ if filtered_data.empty:
 if filtered_hcp_shift_slots.empty:
     st.warning("No shops found for the selected filter criteria.")
 if filtered_hcm.empty:
-    st.warning("No shops found for the selected filter criteria.")
-if filtered_clock.empty:
-    st.warning("No shops found for the selected filter criteria.")    
+    st.warning("No shops found for the selected filter criteria.") 
 if weekly_shift_slots.empty:
     st.warning("No shops found for the selected filter criteria.")
 if weekly_shift_slots_yesterday.empty:
@@ -913,7 +911,10 @@ with tab4:
 with tab3:
     st.markdown(''':green[ **Los datos de entrada y salida están disponibles a partir del 3 de septiembre. Los turnos de SF se ajustan por bloqueos/ausencias*]''')
     st.markdown(''':green[ **Todos los audiólogos que no hayan registrado su salida estarán marcados como NC (No completo) para el día.*]''')
-    
+
+    if filtered_clock.empty:
+        st.warning("No filtre por tienda. Las horas reales trabajadas se suman a todas las tiendas por empleado.  ")
+
     # Pivot the table for Tab 3
     def custom_agg_hours(series):
         # If all values are 'NC', return 'NC'
