@@ -912,6 +912,8 @@ with tab4:
     )
 with tab3:
     st.markdown(''':green[ **Los datos de entrada y salida están disponibles a partir del 3 de septiembre*]''')
+    st.markdown(''':green[ **Todos los audiólogos que no hayan registrado su salida estarán marcados como NC (No completo) para el día.*]''')
+    
     # Pivot the table for Tab 3
     def custom_agg_hours(series):
         # If all values are 'NC', return 'NC'
