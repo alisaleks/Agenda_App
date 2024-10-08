@@ -1216,19 +1216,28 @@ clock['Fecha y hora fichaje'] = pd.to_datetime(clock['Fecha y hora fichaje/decla
 
 # Step 2: Sort the data by 'Id.Empleado' (ID RH) and 'Fecha y hora fichaje'
 clock_sorted = clock.sort_values(by=['ID RH', 'Fecha y hora fichaje'])
-
+clock_sorted.columns
+check_data = clock_sorted[(clock_sorted['ID RH'] == '41884') & (clock_sorted['Fecha y hora fichaje'].dt.date == pd.to_datetime('2024-10-07').date())]
+# Display the relevant columns for verification
+check_data[['ID RH', 'Fecha y hora fichaje']]
+clock_sorted['date_only'] = clock_sorted['Fecha y hora fichaje'].dt.date
 # Step 3: Assign alternating "Clock In" and "Clock Out" labels within each group of 'ID RH'
-clock_sorted['clock_type'] = clock_sorted.groupby('ID RH').cumcount() % 2
+clock_sorted['clock_type'] = clock_sorted.groupby(['ID RH', 'date_only']).cumcount() % 2
 clock_sorted['clock_type'] = clock_sorted['clock_type'].map({0: 'Clock In', 1: 'Clock Out'})
-clock_sorted
+clock_sorted.drop(columns=['date_only'], inplace=True)
 # Step 4: Calculate the time difference only for "Clock In" and the next "Clock Out"
 # Shift the 'Fecha y hora fichaje' column to calculate time difference for Clock In to next Clock Out
 clock_sorted['next_fichaje'] = clock_sorted.groupby('ID RH')['Fecha y hora fichaje'].shift(-1)
 clock_sorted['time_diff'] = clock_sorted['next_fichaje'] - clock_sorted['Fecha y hora fichaje']
 # Step 5: Keep only the rows that are "Clock In" to calculate working hours
 clock_in = clock_sorted[clock_sorted['clock_type'] == 'Clock In'].copy()
-
-clock_in.head()
+check_data = clock_sorted[(clock_sorted['ID RH'] == '41884') & (clock_sorted['Fecha y hora fichaje'].dt.date == pd.to_datetime('2024-10-07').date())]
+# Display the relevant columns for verification
+check_data[['ID RH', 'Fecha y hora fichaje']]
+# Filter for the specific PersonalNumberKey and Date
+check_data = clock_sorted[(clock_sorted['ID RH'] == '41884') & (clock_sorted['Fecha y hora fichaje'].dt.date == pd.to_datetime('2024-10-07').date())]
+# Display the relevant columns for verification
+check_data[['ID RH', 'Fecha y hora fichaje', 'clock_type', 'next_fichaje', 'time_diff']]
 # Step 6: Convert time differences to hours (optional)
 clock_in['hours_worked'] = clock_in.apply(
     lambda row: row['time_diff'].total_seconds() / 3600 
@@ -1236,6 +1245,11 @@ clock_in['hours_worked'] = clock_in.apply(
                 else 'NC', 
     axis=1
 ) 
+# Filter for the specific PersonalNumberKey and Date
+check_data = clock_in[(clock_in['ID RH'] == '41884') & (clock_in['Fecha y hora fichaje'].dt.date == pd.to_datetime('2024-10-07').date())]
+
+# Display the relevant columns for verification
+check_data[['ID RH', 'Fecha y hora fichaje', 'clock_type', 'next_fichaje', 'time_diff', 'hours_worked']]
 
 # Step 7: Apply the NC logic:
 # Check for any 'Clock Out' entries for the day and employee
@@ -1243,14 +1257,18 @@ clock_in['Date'] = clock_in['Fecha y hora fichaje'].dt.date
 has_clock_out = clock_sorted.groupby(['ID RH', clock_sorted['Fecha y hora fichaje'].dt.date])['clock_type'].apply(lambda x: (x == 'Clock Out').any()).reset_index()
 has_clock_out.columns = ['ID RH', 'Date', 'has_clock_out']
 
-# Merge the clock-out check into the clock_in DataFrame
-clock_in = pd.merge(clock_in, has_clock_out, on=['ID RH', 'Date'], how='left')
+# Identify if there is at least one 'Clock Out' on the same day for each ID RH
+clock_out_by_day = clock_in[(clock_in['clock_type'] == 'Clock Out')].groupby(['ID RH', 'Date']).size().reset_index(name='clock_out_count')
+clock_out_by_day['has_clock_out'] = clock_out_by_day['clock_out_count'] > 0
+clock_in = clock_in.merge(clock_out_by_day[['ID RH', 'Date', 'has_clock_out']], on=['ID RH', 'Date'], how='left')
 
-# Update 'hours_worked' to set it as 0 (or keep calculated value) based on the presence of any Clock Out
+# Apply NC logic based on the presence of a valid clock-out for the day
+clock_in['is_nc'] = clock_in.apply(lambda row: 1 if row['hours_worked'] == 'NC' and not row['has_clock_out'] else 0, axis=1)
 clock_in['hours_worked'] = clock_in.apply(
-    lambda row: 0 if row['hours_worked'] == 'NC' and not row['has_clock_out'] else row['hours_worked'], 
+    lambda row: 0 if row['is_nc'] == 1 else row['hours_worked'], 
     axis=1
 )
+
 
 # Replace 'NC' with 0 and convert to float explicitly
 clock_in['hours_worked_numeric'] = clock_in['hours_worked'].replace('NC', 0)
@@ -1260,7 +1278,7 @@ clock_in['hours_worked_numeric'] = clock_in['hours_worked_numeric'].astype(float
 clock_in.drop(columns='has_clock_out', inplace=True)
 clock_in
 # Filter for the specific PersonalNumberKey and Date
-check_data = clock_in[(clock_in['ID RH'] == '4375') & (clock_in['Fecha y hora fichaje'].dt.date == pd.to_datetime('2024-10-03').date())]
+check_data = clock_in[(clock_in['ID RH'] == '41884') & (clock_in['Fecha y hora fichaje'].dt.date == pd.to_datetime('2024-10-07').date())]
 
 # Display the relevant columns for verification
 check_data[['ID RH', 'Fecha y hora fichaje', 'clock_type', 'next_fichaje', 'time_diff', 'hours_worked', 'hours_worked_numeric']]
@@ -1287,8 +1305,6 @@ nc_rows_filtered = clock_in[clock_in['is_nc'] == 1][['is_nc', 'Fecha y hora fich
 
 nc_rows_filtered[['is_nc', 'Fecha y hora fichaje', 'clock_type','next_fichaje' ]].head(20)
 clock_in.drop(columns=['date_only', 'has_valid_pair'], inplace=True)
-
-
 
 total_hours_per_employee = pd.merge(
     clock_in,
@@ -1331,7 +1347,7 @@ total_hours_per_employee_daily.drop(columns='is_nc', inplace=True)
 total_hours_per_employee_daily[['hours_worked_numeric', 'hours_worked']].head()
 total_hours_per_employee_daily.columns
 # Filter for the specific PersonalNumberKey and Date
-check_data = total_hours_per_employee_daily[(total_hours_per_employee_daily['ID RH'] == '4375') & (total_hours_per_employee_daily['Date'] == pd.to_datetime('2024-10-03').date())]
+check_data = total_hours_per_employee_daily[(total_hours_per_employee_daily['ID RH'] == '41884') & (total_hours_per_employee_daily['Date'] == pd.to_datetime('2024-10-07').date())]
 # Display the relevant columns for verification
 check_data[['Date', 'PersonalNumberKey', 'hours_worked', 'hours_worked_numeric']]
 
@@ -1388,7 +1404,7 @@ clockin_merged.rename(columns={
     'DESCR':'Shop[Name]',
 }, inplace=True)
 clockin_merged.drop(columns=['GT_ServiceResource__r.Name', 'ServiceResourceName SF', '_merge', 'SYM'], inplace=True)
-clockin_merged['Diferencia de act duración'] = clockin_merged['ShiftDurationHours'].fillna(0) - clockin_merged['hours_worked_numeric'].fillna(0)
+clockin_merged['Diferencia de act duración'] = clockin_merged['ShiftDurationHoursAdjusted'].fillna(0) - clockin_merged['hours_worked_numeric'].fillna(0)
 clockin_merged[['hours_worked_numeric', 'hours_worked']].head() 
 
 clockin_merged = clockin_merged.drop_duplicates(subset=['PersonalNumberKey', 'Date'])
