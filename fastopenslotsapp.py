@@ -1481,11 +1481,13 @@ with tab6:
     comparison_options = [f'Comparison with start of the month ({formatted_month_start_date})', 'Comparison with yesterday']
     selected_comparison = st.selectbox('Select Comparison:', comparison_options)
     
-    metric_options = ['Shift Hours % change', 'Blocked Hours % change']
+    metric_options = ['Shift Hours % change', 'Blocked Hours % change', 'Booked Hours % change', 'Open Hours % change']
     selected_metric = st.selectbox('Select Metric:', metric_options)
     metric_map = {
         'Shift Hours % change': 'TotalHours',
         'Blocked Hours % change': 'BlockedHours',
+        'Booked Hours % change': 'BookedHours',
+        'Open Hours % change': 'OpenHours'
     }
 
     # Get the column associated with the selected metric
@@ -1503,7 +1505,6 @@ with tab6:
         aggfunc='sum',
         fill_value=0
     )
-
     weekly_aggregated = weekly_aggregated.fillna(0)
     weekly_aggregated = weekly_aggregated.reset_index()
 
@@ -1679,6 +1680,43 @@ with tab6:
             }
         }
         """)
+    elif selected_metric == 'Booked Hours % change':
+        color_coding_js = JsCode("""
+        function(params) {
+            var value = params.value;
+
+            if (params.data['Region'] === 'Total') {
+                return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
+            } else {
+                // Color coding for Total Hours % Change
+                if (value < 0) {
+                    return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive TotalHours % Change
+                } else if (value >= 0) {
+                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative TotalHours % Change
+                }
+                return null;  // Default styling for other values
+            }
+        }
+        """)
+    elif selected_metric == 'Open Hours % change':
+        color_coding_js = JsCode("""
+        function(params) {
+            var value = params.value;
+
+            if (params.data['Region'] === 'Total') {
+                return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
+            } else {
+                // Color coding for Open Hours % Change
+                if (value <= 0) {
+                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for negative or zero OpenHours % Change
+                } else if (value > 0) {
+                    return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for positive OpenHours % Change
+                }
+                return null;  // Default styling for other values
+            }
+        }
+        """)
+
 
     # Create column definitions for percentage change table
     columnDefs_tab6_pct_change = [{"field": 'Region', "headerName": "Region", "resizable": True, "flex": 1}]
