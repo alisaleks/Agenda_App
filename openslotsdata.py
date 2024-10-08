@@ -6,6 +6,9 @@ import json
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.worksheet.table import Table, TableStyleInfo
+import os
+import time
+import re
 
 # Function to handle out-of-bound datetime values
 def handle_out_of_bound_dates(date_str):
@@ -368,9 +371,15 @@ absences_grouped = expanded_absences.groupby(['PersonalNumberKey', 'AbsenceDate'
     'AbsenceEndTime': 'last'
 }).reset_index()
 absences_grouped[(absences_grouped['Resource.GT_PersonalNumber__c'] == '33104')].head(25)
-check= shifts_filtered[shifts_filtered['PersonalNumberKey'] == '022_33104']
-check[[ 'ShiftDate','StartDateHour', 'Key', 'ShiftDurationHours', 'ShopResourceKey', 'Service Resource[IsActive]']]
-shifts_filtered.head()
+# Now perform the filtering with the correct date type
+target_date = datetime.strptime('2024-10-03', '%Y-%m-%d').date()
+
+filtered_absences = absences_grouped[
+    (absences_grouped['PersonalNumberKey'] == '003_11126') & 
+    (absences_grouped['AbsenceDate'] == target_date)
+].head(60)
+filtered_absences[['PersonalNumberKey', 'AbsenceDate','Resource.Name', 'AbsenceStartTime',
+       'AbsenceEndTime']]
 # Group shifts by PersonalNumberKey and ShiftDate to find total shift hours per day per resource
 shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate']).agg({
     'ShiftDurationHours': 'sum',  # Sum of absence duration hours
@@ -396,7 +405,7 @@ shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate']).agg
     
 }).reset_index()
 shifts_grouped.head()
-check= shifts_grouped[shifts_grouped['PersonalNumberKey'] == '022_33104']
+check= shifts_grouped[shifts_grouped['PersonalNumberKey'] == '003_11126']
 check[['PersonalNumberKey', 'ShiftDate', 'ShiftDurationHours','StartTime', 'EndTime']]
 # Step 1: Initialize an empty list to store expanded shifts
 shift_slots_5mins = []
@@ -428,9 +437,17 @@ for _, row in shifts_grouped.iterrows():
 
 # Step 3: Convert the list to a DataFrame
 expanded_shifts_df = pd.DataFrame(shift_slots_5mins)
+expanded_shifts_df[expanded_shifts_df['PersonalNumberKey'] == '003_11126'].head()
 # Assuming 'StartTime' and 'EndTime' columns are added during the slot expansion process.
 filtered_shifts_df = expanded_shifts_df[['ShiftSlot', 'StartTime', 'EndTime', 'ShiftLabel']]
-filtered_shifts_df.head(10)
+expanded_shifts_df.columns
+filtered_shifts = expanded_shifts_df[
+    (expanded_shifts_df['PersonalNumberKey'] == '003_11126') & 
+    (expanded_shifts_df['ShiftSlot'].dt.date == target_date)
+].head(60)
+filtered_shifts[['ShiftSlot', 'StartTime', 'EndTime', 'ShiftLabel']]
+
+
 absence_slots_5mins = []
 
 # Step 2: Loop through each row in absences_grouped and generate 5-minute slots
@@ -456,26 +473,38 @@ for _, row in absences_grouped.iterrows():
 expanded_absences_df = pd.DataFrame(absence_slots_5mins)
 expanded_absences_df['PersonalidKey'] = expanded_absences_df['GT_ShopCode__c'] + expanded_absences_df['Service Resource[Id]']
 # The goal here is to filter out any absence that does not fall within a shift slot
-
+# Now perform the filtering with the correct date type
+filtered_absences_exp = expanded_absences_df[
+    (expanded_absences_df['PersonalNumberKey'] == '003_11126') & 
+    (expanded_absences_df['AbsenceSlot'].dt.date == target_date)
+].head(60)
+filtered_absences_exp
 # Merge absence slots with shift slots on the PersonalNumberKey and 5-minute time slot
-absences_with_shifts = pd.merge(
-    expanded_absences_df,
-    expanded_shifts_df[['PersonalNumberKey', 'ShiftSlot']],  # Only keep relevant columns from shifts
-    how='inner',  # Use inner join to keep only absences that match a shift
-    left_on=['PersonalNumberKey', 'AbsenceSlot'],
-    right_on=['PersonalNumberKey', 'ShiftSlot']
+absences_with_shifts = pd.merge_asof(
+    expanded_absences_df.sort_values('AbsenceSlot'),
+    expanded_shifts_df[['PersonalNumberKey', 'ShiftSlot']].sort_values('ShiftSlot'),
+    left_on='AbsenceSlot',
+    right_on='ShiftSlot',
+    by='PersonalNumberKey',
+    tolerance=pd.Timedelta('5min'),
+    direction='nearest'
 )
 
+# Now perform the filtering with the correct date type
+filtered_absences_exp = absences_with_shifts[
+    (absences_with_shifts['PersonalNumberKey'] == '003_11126') & 
+    (absences_with_shifts['AbsenceSlot'].dt.date == target_date)
+].head(60)
+filtered_absences_exp
 # Step 2: Drop duplicates if needed (optional, depending on your data)
 absences_with_shifts = absences_with_shifts.drop_duplicates()
-target_date = datetime.strptime('2024-09-02', '%Y-%m-%d').date()
+target_date = datetime.strptime('2024-10-03', '%Y-%m-%d').date()
 
 # Now perform the filtering with the correct date type
-filtered_absences = absences_with_shifts[
-    (absences_with_shifts['PersonalNumberKey'] == '994_55617') & 
-    (absences_with_shifts['ShiftSlot'].dt.date == target_date)
+filtered_absences = absences_grouped[
+    (absences_grouped['PersonalNumberKey'] == '003_11126') & 
+    (absences_grouped['AbsenceDate'] == target_date)
 ].head(60)
-
 filtered_absences
 absences_with_shifts['AbsenceSlotDate'] = absences_with_shifts['AbsenceSlot'].dt.date
 # Rename the AbsenceSlotDate to 'date' to align with other datasets
@@ -869,9 +898,12 @@ current_date = datetime.now().strftime("%Y-%m-%d")
 output_file_path = f'shiftslots_{current_date}.xlsx' 
 shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')
 
+filtered_shift_slots = shift_slots[shift_slots['date_column'] == current_date]
+output_file_path_today= f'hours_{current_date}.xlsx'
+filtered_shift_slots.to_excel(output_file_path_today, index=False, engine='openpyxl')
 
 # Now to convert it into a table format
-wb = load_workbook(output_file_path)
+wb = load_workbook(output_file_path_today)
 ws = wb.active
 
 # Define the range of the data to create a table
@@ -896,7 +928,7 @@ table.tableStyleInfo = style
 ws.add_table(table)
 
 # Save the workbook with the table
-wb.save(output_file_path)
+wb.save(output_file_path_today)
 
 #TAB4
 sfshifts_merged.head()
@@ -1099,19 +1131,82 @@ all_composite_keys.columns
 output_file_path1 = 'hcm_sf_merged.xlsx'
 all_composite_keys.to_excel(output_file_path1, index=False, engine='openpyxl')
 
+
+def load_and_merge_files(directory, file_pattern):
+    # List to store dataframes
+    all_dfs = []
+    
+    # Regular expression to match the filename pattern flexibly
+    pattern = re.compile(r"1039963987_.*_1_1_ *\.xlsx")
+
+    # List files in directory for debugging
+    print("Files in directory:", os.listdir(directory))
+
+    # Scan for files matching the regex pattern
+    for filename in os.listdir(directory):
+        print(f"Checking {filename}...")
+        if pattern.match(filename):
+            file_path = os.path.join(directory, filename)
+            print(f"Loading {filename}")
+            # Load the file, skipping the first 4 rows, using the 5th row as header
+            df = pd.read_excel(file_path, header=6)
+            df['ID RH'] = df['ID RH'].astype(str).str.strip()
+            all_dfs.append(df)
+    
+    # Merge all dataframes into one
+    if all_dfs:
+        clock = pd.concat(all_dfs, ignore_index=True)
+        print("All files merged successfully.")
+        return clock
+    else:
+        print("No files found matching the pattern.")
+        return None
+
+# Initial load of files
+directory = 'files'
+file_pattern = "1039963987_*_1_1_"
+clock = load_and_merge_files(directory, file_pattern)
+
+
+# Function to check for new files and merge them
+def check_for_new_files(clock, directory, file_pattern):
+    # Track loaded files
+    loaded_files = set(clock['filename'].unique()) if clock is not None else set()
+    
+    while True:
+        for filename in os.listdir(directory):
+            if filename.startswith(file_pattern) and filename.endswith('.xlsx'):
+                if filename not in loaded_files:
+                    print(f"New file detected: {filename}")
+                    file_path = os.path.join(directory, filename)
+                    new_df = pd.read_excel(file_path, header=6)
+                    new_df['ID RH'] = new_df['ID RH'].astype(str).str.strip()
+                    # Add filename to track
+                    new_df['filename'] = filename
+                    # Merge new data
+                    clock = pd.concat([clock, new_df], ignore_index=True)
+                    loaded_files.add(filename)
+                    print(f"{filename} has been merged.")
+                    
+        # Optional sleep time to avoid constant disk reads
+        time.sleep(10)  # Check every 10 seconds
+
+
+clock.columns
 #Clock-in-out
-clock = '1039467394_4_1_1_ .xlsx'
+#clock = '1039467394_4_1_1_ .xlsx'
 # Load the Excel file, skipping the first 4 rows and using the 5th row as headers
-clock = pd.read_excel(clock, header=6)
-clock['ID RH'] = clock['ID RH'].astype(str).str.strip()
+#clock = pd.read_excel(clock, header=6)
+#clock['ID RH'] = clock['ID RH'].astype(str).str.strip()
+# Convert to string, handling NaN and removing any .0 from floats
+clock['ID RH'] = clock['ID RH'].astype(str).replace(r'\.0$', '', regex=True).replace('nan', '')
+clock['ID RH'] 
 clock = clock[clock['Nombre puesto'] != 'COUNTRY CLIENT ADVISOR']
 clock = clock[clock['ID RH'] != '52363']
 clock = clock[clock['ID RH'] != '41959']
 
-clock[clock['ID RH'] == '41959']
-
 # Assuming 'df' is the DataFrame and 'Id.Empleado' is the column to check for duplicates
-duplicates = clock[clock.duplicated(subset='ID RH', keep=False)]
+duplicates = clock[clock.duplicated(subset=['ID RH', 'Fecha y hora fichaje/declarac.'], keep=False)]
 
 # Display the duplicate rows
 print(duplicates)
@@ -1133,27 +1228,31 @@ clock_sorted['time_diff'] = clock_sorted['next_fichaje'] - clock_sorted['Fecha y
 
 # Step 5: Keep only the rows that are "Clock In" to calculate working hours
 clock_in = clock_sorted[clock_sorted['clock_type'] == 'Clock In'].copy()
-
+clock_in.head()
 # Step 6: Convert time differences to hours (optional)
-clock_in['hours_worked'] = clock_in['time_diff'].dt.total_seconds() / 3600
+clock_in['hours_worked'] = clock_in.apply(
+    lambda row: row['time_diff'].total_seconds() / 3600 
+                if pd.notnull(row['time_diff']) and row['next_fichaje'].date() == row['Fecha y hora fichaje'].date() 
+                else 'NC', 
+    axis=1
+)
 
+# Replace 'NC' with 0 and convert to float explicitly
+clock_in['hours_worked_numeric'] = clock_in['hours_worked'].replace('NC', 0)
+clock_in['hours_worked_numeric'] = clock_in['hours_worked_numeric'].astype(float)
+clock_in[['hours_worked_numeric', 'hours_worked']].head() 
 clock_in['Shop Name'] = clock_in['Nombre unidad org.'].str.replace('ES - SHOP - ', '', regex=False)
 clock_in['Shop Name'] = clock_in['Shop Name'].str.strip()
 clock_in['Shop Name'] = clock_in['Shop Name'].replace("L’HOSPITALET DE LLOBREGAT - JUST OLIVERES", "L'HOSPITALET DE LLOBREGAT - JUST OLIVERES")
 # Filter out rows where 'Nombre puesto' is 'COUNTRY CLIENT ADVISOR'
+clock_in['is_nc'] = clock_in['hours_worked'].apply(lambda x: 1 if x == 'NC' else 0)
+nc_rows_filtered = clock_in[clock_in['is_nc'] == 1][['is_nc', 'Fecha y hora fichaje', 'clock_type', 'next_fichaje']]
 
-clock_in[clock_in['ID RH'] == '52363']
+nc_rows_filtered[['is_nc', 'Fecha y hora fichaje', 'clock_type','next_fichaje' ]].head(20)
 
-
-# Step 2: Calculate total hours worked per employee and include 'Shop Name'
-total_hours_per_employee = clock_in.groupby('ID RH').agg({
-    'hours_worked': 'sum',
-    'Fecha y hora fichaje': 'first',
-    'Shop Name': 'first'
-}).reset_index()
 
 total_hours_per_employee = pd.merge(
-    total_hours_per_employee,
+    clock_in,
     region_mapping[['CODE', 'REGION', 'AREA', 'DESCR','SYM']],  # Include Region, Area, and Shop[Name]
     left_on='Shop Name',
     right_on='DESCR',
@@ -1168,32 +1267,39 @@ total_hours_per_employee['PersonalNumberKey'] = total_hours_per_employee['CODE']
 total_hours_per_employee['Fecha y hora fichaje'] = pd.to_datetime(total_hours_per_employee['Fecha y hora fichaje'])
 total_hours_per_employee['Date'] = total_hours_per_employee['Fecha y hora fichaje'].dt.date
 
-total_hours_per_employee_weekly = total_hours_per_employee.groupby(
-    ['CompositeKey', 'ISO Year', 'ISO Week']
-).agg({
-    'hours_worked': 'sum',
-    'ID RH': 'first'
-    }).reset_index()
-
+# Group by with the new column and sum it, while keeping the original 'hours_worked' column
 total_hours_per_employee_daily = total_hours_per_employee.groupby(
     ['Date', 'PersonalNumberKey'], as_index=False
 ).agg({
-    'hours_worked': 'sum',  # Summing the hours worked per day
+    'hours_worked_numeric': 'sum',  # Summing the hours worked, with 'NC' as 0
     'ID RH': 'first',       
     'Shop Name': 'first',   
     'CODE': 'first',        
     'REGION': 'first',
     'AREA': 'first',
     'DESCR': 'first',
-    'SYM': 'first'
-})
+    'SYM': 'first',
+    'is_nc': 'max'  # Check if any entry within the group was 'NC'
 
+})
 print(total_hours_per_employee_daily.head())
+# Filter for rows where 'hours_worked' is 'NC'
+total_hours_per_employee_daily['hours_worked'] = total_hours_per_employee_daily.apply(
+    lambda row: 'NC' if row['is_nc'] == 1 else row['hours_worked_numeric'], axis=1
+)
+# Drop the temporary 'is_nc' column as it is no longer needed
+total_hours_per_employee_daily.drop(columns='is_nc', inplace=True)
+total_hours_per_employee_daily[['hours_worked_numeric', 'hours_worked']].head()
+
+
+
 total_hours_per_employee_daily['Date'] = pd.to_datetime(total_hours_per_employee_daily['Date']).dt.date
 sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate']).dt.date
+sfshifts_merged[sfshifts_merged['PersonalNumberKey'] == '003_11126'].head()
+
 # Step 4: Merge both datasets (without region/area/shop data yet)
 clockin_merged = pd.merge(
-    total_hours_per_employee_daily[['PersonalNumberKey', 'Date', 'hours_worked']], 
+    total_hours_per_employee_daily[['PersonalNumberKey', 'Date', 'hours_worked', 'hours_worked_numeric']], 
     sfshifts_merged[['PersonalNumberKey', 'GT_ServiceResource__r.Name', 'ShiftDate', 'ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']],
     left_on=['PersonalNumberKey', 'Date'],    
     right_on=['PersonalNumberKey', 'ShiftDate'], 
@@ -1229,7 +1335,7 @@ clockin_merged['Date'] = pd.to_datetime(clockin_merged['Date'])
 clockin_merged['weekday'] = clockin_merged['Date'].dt.day_name()
 clockin_merged['iso_week'] = clockin_merged['Date'].dt.isocalendar().week
 
-missing_rows_after_fill = clockin_merged[clockin_merged['ServiceResourceName SF'].isna()]
+missing_rows_after_fill = clockin_merged[clockin_merged['Resource Name'].isna()]
 missing_rows_after_fill
 clockin_merged.columns
 clockin_merged.rename(columns={
@@ -1240,7 +1346,8 @@ clockin_merged.rename(columns={
     'DESCR':'Shop[Name]',
 }, inplace=True)
 clockin_merged.drop(columns=['GT_ServiceResource__r.Name', 'ServiceResourceName SF', '_merge', 'SYM'], inplace=True)
-clockin_merged['Diferencia de act duración'] = clockin_merged['ShiftDurationHours'].fillna(0) - clockin_merged['hours_worked'].fillna(0)
+clockin_merged['Diferencia de act duración'] = clockin_merged['ShiftDurationHours'].fillna(0) - clockin_merged['hours_worked_numeric'].fillna(0)
+clockin_merged[['hours_worked_numeric', 'hours_worked']].head() 
 
 clockin_merged = clockin_merged.drop_duplicates(subset=['PersonalNumberKey', 'Date'])
 duplicates = clockin_merged[clockin_merged.duplicated(subset=['PersonalNumberKey', 'Date'])]

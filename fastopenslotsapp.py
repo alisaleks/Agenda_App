@@ -25,8 +25,6 @@ def load_excel(file_path, usecols=None, **kwargs):
         print(f"File {file_path} not found.")
         return None
 
-
-
 def find_last_working_day(start_date):
     """ Helper function to find the last working day before a given start date. """
     current_date = start_date
@@ -198,21 +196,34 @@ def get_start_and_end_of_current_month():
 month_start_date, month_end_date = get_start_and_end_of_current_month()
 current_date = datetime.now()
 yesterday_date = current_date - timedelta(days=1)
+
+# Determine if today is Monday
+if current_date.weekday() == 0:  # Monday
+    print("Today is Monday, directly finding last Friday's file...")
+    # On Monday, skip Sunday and Saturday
+    last_working_day = find_last_working_day(current_date - timedelta(days=3))
+else:
+    # On other days, start with today
+    last_working_day = find_last_working_day(current_date)
+
 today_file_name = f"shiftslots_{current_date.strftime('%Y-%m-%d')}.xlsx"
 yesterday_file_name = f"shiftslots_{yesterday_date.strftime('%Y-%m-%d')}.xlsx"
 sep6_file_name = f"shiftslots_{month_start_date.strftime('%Y-%m-%d')}.xlsx"
+last_working_day_file_name = f"shiftslots_{last_working_day.strftime('%Y-%m-%d')}.xlsx"
 
 shift_slots = load_excel(today_file_name)
-if shift_slots is None:
+
+# Fallback to yesterday's file if today’s file is missing and it’s not Monday
+if shift_slots is None and current_date.weekday() != 0:
     print("Today's file not found, trying yesterday's file...")
     shift_slots = load_excel(yesterday_file_name)
-    
-    if shift_slots is None:
-        print("Yesterday's file not found, finding the last working day...")
-        last_working_day = find_last_working_day(current_date)
-        last_working_day_file_name = f"shiftslots_{last_working_day.strftime('%Y-%m-%d')}.xlsx"
-        shift_slots = load_excel(last_working_day_file_name)
 
+# Fallback to last working day’s file if both today’s and yesterday’s files are missing
+if shift_slots is None:
+    print("No file found for today or yesterday, trying the last working day's file...")
+    shift_slots = load_excel(last_working_day_file_name)
+
+# Stop if no file is found after all attempts
 if shift_slots is None:
     st.error("No file found for today, yesterday, or the last working day.")
     st.stop()
@@ -350,7 +361,6 @@ weekly_shift_sep6 = filter_hcp_shift_slots(shift_slots_sep6, selected_region, se
 # Apply the filters to HCM data (without iso_week filter)
 filtered_hcm = filter_hcm_data(hcm, selected_region, selected_area, selected_shop)
 filtered_clock = filter_data(clock,iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
-
 # Check if filtered data is empty after applying the filters
 if filtered_data.empty:
     st.warning("No shops found for the selected filter criteria.")
@@ -414,9 +424,6 @@ aggregated_data = filtered_data.groupby(['GT_ShopCode__c', 'Shop[Name]', 'date',
 
 aggregated_data['date'] = pd.to_datetime(aggregated_data['date']).dt.date
 check= aggregated_data[(aggregated_data['GT_ShopCode__c'] == '240')]
-
-
-
 
 # Aggregating data by GT_ShopCode__c, Shop[Name], date, and weekday
 hcp_data = filtered_hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceResource__r.Name', 'GT_ShopCode__c', 'Shop[Name]', 'ShiftDate', 'weekday']).agg(
@@ -904,16 +911,28 @@ with tab4:
         custom_css=custom_css  # Apply custom CSS
     )
 with tab3:
-    st.markdown(''':red[ *****Work in Porgress***: En esta pestaña podrá comparar las horas trabajadas reales con las horas configuradas de SF por empleado*]''')
+    st.markdown(''':green[ **Los datos de entrada y salida están disponibles a partir del 3 de septiembre*]''')
     # Pivot the table for Tab 3
+    def custom_agg_hours(series):
+        # If all values are 'NC', return 'NC'
+        if (series == 'NC').all():
+            return 'NC'
+        # Convert 'NC' to 0 for summation purposes
+        numeric_series = pd.to_numeric(series.replace('NC', 0), errors='coerce').fillna(0)
+        return numeric_series.sum()
+
+    # Pivot the table with custom aggregation function for 'hours_worked'
     pivot_table_tab3 = filtered_clock.pivot_table(
         index=['Resource Name', 'Shop[Name]'],
         columns=['Date', 'weekday'],
         values=['hours_worked', 'ShiftDurationHours', 'Diferencia de act duración'],
-        aggfunc='sum',
+        aggfunc={
+            'hours_worked': custom_agg_hours,
+            'ShiftDurationHours': 'sum',
+            'Diferencia de act duración': 'sum'
+        },
         fill_value=0
     )
-
     # Flatten the columns (removing 'Day' and aligning with the other tab)
     pivot_table_tab3.columns = [
         f"{col[0]}_{col[1].strftime('%Y-%m-%d')} {col[2]}" for col in pivot_table_tab3.columns.to_flat_index()
@@ -922,10 +941,8 @@ with tab3:
     # Format all numeric columns to one decimal point
     numeric_columns_in_pivot_tab3 = [col for col in pivot_table_tab3_reset.columns if 'hours_worked' in col or 'ShiftDurationHours' in col or 'Diferencia de act duración' in col]
     pivot_table_tab3_reset[numeric_columns_in_pivot_tab3] = pivot_table_tab3_reset[numeric_columns_in_pivot_tab3].round(1)
-
     # Create the DataFrame for AgGrid
     df_tab3 = pivot_table_tab3_reset
-
     # Ensure no spaces in field names, replace spaces with underscores
     df_tab3.columns = [col.replace(' ', '_') for col in df_tab3.columns]
 
@@ -1045,20 +1062,22 @@ with tab3:
         'Resource_Name': 'Total'
     }
     for col in numeric_columns_in_pivot_tab3:
-        col = col.replace(' ', '_')  # Ensure consistency with df_tab3 column names
-        if col in df_tab3.columns:  # Check if the column exists
-            # Special handling for Delta columns (if needed)
-            if 'Diferencia_de_act_duración' in col:
-                total_row_tab3[col] = f"{int(df_tab3[col].sum().round(0)):,}"  # Sum Delta (if summable)
+        col = col.replace(' ', '_') 
+        if col in df_tab3.columns:  
+            # Convert column to numeric, ignoring errors to handle 'NC'
+            numeric_values = pd.to_numeric(df_tab3[col], errors='coerce')
+            total_value = numeric_values.sum(min_count=1)  # Sum ignoring non-numeric, use `min_count=1` to handle empty
+            if pd.isna(total_value):
+                total_value = 'NC' 
             else:
-                total_row_tab3[col] = f"{int(df_tab3[col].sum().round(0)):,}"  # Format with commas
-
+                total_value = f"{int(total_value.round(0)):,}"  
+            total_row_tab3[col] = total_value
     # Convert total_row to DataFrame
     total_df_tab3 = pd.DataFrame(total_row_tab3, index=[0])
     df_tab3_with_totals = pd.concat([total_df_tab3, df_tab3], ignore_index=True)  
 
     # Configure GridOptionsBuilder with JavaScript code
-    gb_tab3 = GridOptionsBuilder.from_dataframe(df_tab4_with_totals)
+    gb_tab3 = GridOptionsBuilder.from_dataframe(df_tab3_with_totals)
     # Add individual column configurations for conditional formatting
     for column in df_tab3[1:]:
         gb_tab3.configure_column(field=column, cellStyle=js_code)
