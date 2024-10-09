@@ -1108,82 +1108,111 @@ with tab3:
 
 with tab5:
 
+    # Warning messages for empty data
     if weekly_shift_slots.empty:
         st.warning("No shops found for the selected filter criteria.")
     if weekly_shift_slots_yesterday.empty:
         st.warning("No shops found for the selected filter criteria.")
 
-    # New Time Series for HCM and SF Difference over ISO Weeks
-    st.markdown("### Overview")
-    # Create two columns
-    cols = st.columns(2)
-
-    # Step 1: Group filtered_hcm by 'iso_week' and sum 'Diferencia de hcm duración'
-    hcm_weekly_diff = filtered_hcm.groupby('iso_week').agg(
-        total_diff=('Diferencia de hcm duración', 'sum')
-    ).reset_index()
-
-    # Step 2: Create an interactive time series graph using Plotly
-    fig_diff = px.line(
-        hcm_weekly_diff,
-        x='iso_week',  # The ISO week number
-        y='total_diff',  # The total difference
-        labels={'iso_week': 'ISO Week', 'total_diff': 'Total Difference (HCM vs SF)'},  # Axis labels
-        title="HCM vs SF Duration Difference Over Weeks",
-        markers=True  # Add markers to the line chart
-    )
-
-    # Step 3: Customize the layout for better readability
-    fig_diff.update_layout(
-        xaxis_title="Week Number",  # Label for X-axis
-        yaxis_title="Total Difference",  # Label for Y-axis
-        hovermode="x unified"  # Show all values for the x-coordinate when hovering
-    )
-
-    # Step 4: Update the hover template to show detailed information
-    fig_diff.update_traces(
-        hovertemplate='ISO Week: %{x}<br>Total Difference: %{y:.2f}'
-    )
-
-    cols[0].plotly_chart(fig_diff)
-
-
+    # Define the date range for filtered_clock_noiso
     start_date_act = pd.Timestamp('2024-10-03')
     end_date_act = pd.Timestamp(datetime.now().date() - timedelta(days=1))
 
-    filtered_clock_date_range = filtered_clock_noiso[
-        (filtered_clock_noiso['Date'] >= start_date_act) & (filtered_clock_noiso['Date'] <= end_date_act)
-    ]
+    # Column layout
+    st.markdown("### Overview")
+    cols = st.columns(2)
 
-    # Step 1: Group filtered_clock by 'iso_week' and sum 'Diferencia de act duración'
-    acd_weekly_diff = filtered_clock_date_range.groupby('Date').agg(
-        total_diff=('Diferencia de act duración', 'sum')
-    ).reset_index()
+    # HCM vs SF Chart and Top Shops
+    with cols[0]:
+        # Step 1: Group filtered_hcm by 'iso_week' and sum 'Diferencia de hcm duración'
+        hcm_weekly_diff = filtered_hcm.groupby('iso_week').agg(
+            total_diff=('Diferencia de hcm duración', 'sum')
+        ).reset_index()
 
-    # Step 2: Create an interactive time series graph using Plotly
-    fig_acd_diff = px.line(
-        acd_weekly_diff,
-        x='Date',  # The ISO week number
-        y='total_diff',  # The total difference
-        labels={'Date': 'Day', 'total_diff': 'Total Difference (ACT vs SF)'},  # Axis labels
-        title="ACT vs SF Duration Difference Over Days",
-        markers=True  # Add markers to the line chart
-    )
+        # Create HCM vs SF line chart
+        fig_diff = px.line(
+            hcm_weekly_diff,
+            x='iso_week', 
+            y='total_diff',
+            labels={'iso_week': 'ISO Week', 'total_diff': 'Total Difference (HCM vs SF)'},
+            title="HCM vs SF Duration Difference Over Weeks",
+            markers=True
+        )
+        fig_diff.update_layout(
+            xaxis_title="Week Number",
+            yaxis_title="Total Difference",
+            hovermode="x unified"
+        )
+        fig_diff.update_traces(
+            hovertemplate='ISO Week: %{x}<br>Total Difference: %{y:.2f}'
+        )
+        cols[0].plotly_chart(fig_diff)
 
-    # Step 3: Customize the layout for better readability
-    fig_acd_diff.update_layout(
-        xaxis_title="Day",  # Label for X-axis
-        yaxis_title="Total Difference",  # Label for Y-axis
-        hovermode="x unified"  # Show all values for the x-coordinate when hovering
-    )
+        # Get top 3 shops with the largest 'Diferencia de hcm duración'
+        top_shops_hcm = filtered_hcm.groupby('Shop Name').agg(
+            total_diff=('Diferencia de hcm duración', 'sum')
+        ).nlargest(3, 'total_diff').reset_index()
 
-    # Step 4: Update the hover template to show detailed information
-    fig_acd_diff.update_traces(
-        hovertemplate='Day: %{x}<br>Total Difference: %{y:.2f}',
-        line_color='red'  
-    )
-    
-    cols[1].plotly_chart(fig_acd_diff)
+        # Display top 3 shops side-by-side under the HCM vs SF chart
+        hcm_cols = st.columns(3)
+        for i, row in enumerate(top_shops_hcm.iterrows()):
+            with hcm_cols[i]:
+                st.markdown(f"""
+                <div style="border: 2px solid #1f77b4; border-radius: 10px; padding: 10px; margin: 5px 0; background-color: #f9f9f9; text-align: center;">
+                    <strong>Shop {i + 1}: {row[1]['Shop Name']}</strong><br>
+                    Total Difference: <span style="color: #1f77b4; font-weight: bold;">{row[1]['total_diff']:.2f}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+
+    # ACT vs SF Chart and Top Shops
+    with cols[1]:
+        # Filter date range for ACT vs SF data
+        filtered_clock_date_range = filtered_clock_noiso[
+            (filtered_clock_noiso['Date'] >= start_date_act) & (filtered_clock_noiso['Date'] <= end_date_act)
+        ]
+
+        # Group by Date and sum 'Diferencia de act duración'
+        acd_weekly_diff = filtered_clock_date_range.groupby('Date').agg(
+            total_diff=('Diferencia de act duración', 'sum')
+        ).reset_index()
+
+        # Create ACT vs SF line chart
+        fig_acd_diff = px.line(
+            acd_weekly_diff,
+            x='Date',
+            y='total_diff',
+            labels={'Date': 'Day', 'total_diff': 'Total Difference (ACT vs SF)'},
+            title="ACT vs SF Duration Difference Over Days",
+            markers=True
+        )
+        fig_acd_diff.update_layout(
+            xaxis_title="Day",
+            yaxis_title="Total Difference",
+            hovermode="x unified"
+        )
+        fig_acd_diff.update_traces(
+            hovertemplate='Day: %{x}<br>Total Difference: %{y:.2f}',
+            line_color='red'
+        )
+        cols[1].plotly_chart(fig_acd_diff)
+
+        # Get top 3 shops with the largest 'Diferencia de act duración'
+        top_shops_acd = filtered_clock_date_range.groupby('Shop[Name]').agg(
+            total_diff=('Diferencia de act duración', 'sum')
+        ).nlargest(3, 'total_diff').reset_index()
+
+        # Display top 3 shops side-by-side under the ACT vs SF chart
+        acd_cols = st.columns(3)
+        for i, row in enumerate(top_shops_acd.iterrows()):
+            with acd_cols[i]:
+                st.markdown(f"""
+                <div style="border: 2px solid #d62728; border-radius: 10px; padding: 10px; margin: 5px 0; background-color: #f9f9f9; text-align: center;">
+                    <strong>Shop {i + 1}: {row[1]['Shop[Name]']}</strong><br>
+                    Total Difference: <span style="color: #d62728; font-weight: bold;">{row[1]['total_diff']:.2f}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
 
     # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
     weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
