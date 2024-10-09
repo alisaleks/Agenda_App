@@ -1130,12 +1130,13 @@ all_composite_keys.columns
 output_file_path1 = 'hcm_sf_merged.xlsx'
 all_composite_keys.to_excel(output_file_path1, index=False, engine='openpyxl')
 
-def load_and_merge_files(directory):
+
+def load_and_merge_files(directory, file_pattern):
     # List to store dataframes
     all_dfs = []
     
-    # Regular expression to match the filename pattern
-    pattern = re.compile(r"\d+_[0-9]_1_1_\s*\.xlsx")
+    # Regular expression to match the filename pattern flexibly
+    pattern = re.compile(r"\d{10}_.*_1_1_ *\.xlsx")
 
     # List files in directory for debugging
     print("Files in directory:", os.listdir(directory))
@@ -1147,15 +1148,8 @@ def load_and_merge_files(directory):
             file_path = os.path.join(directory, filename)
             print(f"Loading {filename}")
             # Load the file, skipping the first 4 rows, using the 5th row as header
-            df = pd.read_excel(file_path, header=4)
-            print(f"Columns found: {df.columns.tolist()}")  # Print columns for debugging
-            
-            # Check if 'ID RH' exists in the columns
-            if 'ID RH' in df.columns:
-                df['ID RH'] = df['ID RH'].astype(str).str.strip()
-            else:
-                print(f"'ID RH' column not found in {filename}. Available columns: {df.columns.tolist()}")
-            
+            df = pd.read_excel(file_path, header=6)
+            df['ID RH'] = df['ID RH'].astype(str).str.strip()
             all_dfs.append(df)
     
     # Merge all dataframes into one
@@ -1169,8 +1163,10 @@ def load_and_merge_files(directory):
 
 # Initial load of files
 directory = 'files'
-clock = load_and_merge_files(directory)
+file_pattern = re.compile(r"\d{10}_.*_1_1_ *\.xlsx")
 
+
+clock = load_and_merge_files(directory, file_pattern)
 
 # Function to check for new files and merge them
 def check_for_new_files(clock, directory, file_pattern):
@@ -1194,16 +1190,16 @@ def check_for_new_files(clock, directory, file_pattern):
                     
         # Optional sleep time to avoid constant disk reads
         time.sleep(10)  # Check every 10 seconds
-
-
-clock.columns
+# Convert 'ID RH' to string, remove '.0' for floats, and handle NaN
+clock['ID RH'] = clock['ID RH'].fillna('').astype(str).str.replace(r'\.0$', '', regex=True)
+clock.tail(5)
 #Clock-in-out
-clock = '1039467394_4_1_1_ .xlsx'
+#clock = '1039467394_4_1_1_ .xlsx'
 # Load the Excel file, skipping the first 4 rows and using the 5th row as headers
-clock = pd.read_excel(clock, header=6)
+#clock = pd.read_excel(clock, header=6)
 #clock['ID RH'] = clock['ID RH'].astype(str).str.strip()
 # Convert to string, handling NaN and removing any .0 from floats
-clock['ID RH'] = clock['ID RH'].astype(str).replace(r'\.0$', '', regex=True).replace('nan', '')
+#clock['ID RH'] = clock['ID RH'].astype(str).replace(r'\.0$', '', regex=True).replace('nan', '')
 
 # Assuming 'df' is the DataFrame and 'Id.Empleado' is the column to check for duplicates
 duplicates = clock[clock.duplicated(subset=['ID RH', 'Fecha y hora fichaje/declarac.'], keep=False)]
@@ -1213,6 +1209,11 @@ print(duplicates)
 
 # Step 1: Ensure that the 'Fecha y hora fichaje' column is in datetime format
 clock['Fecha y hora fichaje'] = pd.to_datetime(clock['Fecha y hora fichaje/declarac.'])
+# Ensure 'Fecha y hora fichaje/declarac.' is in datetime format
+# Filter for rows where the date is 08 October
+count_07_10 = clock[clock['Fecha y hora fichaje/declarac.'].dt.strftime('%d.%m') == '04.10'].shape[0]
+
+print(f"Number of rows where 'Fecha y hora fichaje/declarac.' is 08.10: {count_07_10}")
 
 # Step 2: Sort the data by 'Id.Empleado' (ID RH) and 'Fecha y hora fichaje'
 clock_sorted = clock.sort_values(by=['ID RH', 'Fecha y hora fichaje'])
@@ -1411,3 +1412,4 @@ duplicates = clockin_merged[clockin_merged.duplicated(subset=['PersonalNumber', 
 duplicates
 output_file_path3 = 'clock.xlsx'
 clockin_merged.to_excel(output_file_path3, index=False, engine='openpyxl')
+clockin_merged.head(20)
