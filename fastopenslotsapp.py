@@ -361,6 +361,7 @@ weekly_shift_sep6 = filter_hcp_shift_slots(shift_slots_sep6, selected_region, se
 # Apply the filters to HCM data (without iso_week filter)
 filtered_hcm = filter_hcm_data(hcm, selected_region, selected_area, selected_shop)
 filtered_clock = filter_data(clock,iso_week_filter, selected_region, selected_area, selected_shop, 'iso_week')
+filtered_clock_noiso = filter_hcp_shift_slots(clock, selected_region, selected_area, selected_shop)
 
 # Filter data for the previous ISO week without applying the current filters (directly from shift_slots)
 previous_week_data = shift_slots[
@@ -1114,6 +1115,8 @@ with tab5:
 
     # New Time Series for HCM and SF Difference over ISO Weeks
     st.markdown("### Overview")
+    # Create two columns
+    cols = st.columns(2)
 
     # Step 1: Group filtered_hcm by 'iso_week' and sum 'Diferencia de hcm duración'
     hcm_weekly_diff = filtered_hcm.groupby('iso_week').agg(
@@ -1142,11 +1145,18 @@ with tab5:
         hovertemplate='ISO Week: %{x}<br>Total Difference: %{y:.2f}'
     )
 
-    # Step 5: Display the Plotly chart in Streamlit
-    st.plotly_chart(fig_diff, use_container_width=True)
+    cols[0].plotly_chart(fig_diff)
+
+
+    start_date_act = pd.Timestamp('2024-10-03')
+    end_date_act = pd.Timestamp(datetime.now().date() - timedelta(days=1))
+
+    filtered_clock_date_range = filtered_clock_noiso[
+        (filtered_clock_noiso['Date'] >= start_date_act) & (filtered_clock_noiso['Date'] <= end_date_act)
+    ]
 
     # Step 1: Group filtered_clock by 'iso_week' and sum 'Diferencia de act duración'
-    acd_weekly_diff = filtered_clock.groupby('Date').agg(
+    acd_weekly_diff = filtered_clock_date_range.groupby('Date').agg(
         total_diff=('Diferencia de act duración', 'sum')
     ).reset_index()
 
@@ -1156,7 +1166,7 @@ with tab5:
         x='Date',  # The ISO week number
         y='total_diff',  # The total difference
         labels={'Date': 'Day', 'total_diff': 'Total Difference (ACT vs SF)'},  # Axis labels
-        title="ACT vs SF Duration Difference Over Weeks",
+        title="ACT vs SF Duration Difference Over Days",
         markers=True  # Add markers to the line chart
     )
 
@@ -1169,11 +1179,12 @@ with tab5:
 
     # Step 4: Update the hover template to show detailed information
     fig_acd_diff.update_traces(
-        hovertemplate='Day: %{x}<br>Total Difference: %{y:.2f}'
+        hovertemplate='Day: %{x}<br>Total Difference: %{y:.2f}',
+        line_color='red'  
     )
+    
+    cols[1].plotly_chart(fig_acd_diff)
 
-    # Step 5: Display the Plotly chart in Streamlit
-    st.plotly_chart(fig_acd_diff, use_container_width=True)
     # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
     weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
         TotalHours=('TotalHours', 'sum'),
