@@ -237,9 +237,9 @@ if shift_slots_yesterday is None:
     shift_slots_yesterday = load_excel(os.path.join(folder_path, last_working_day_yesterday_file_name))
 
 shift_slots_sep6 = load_excel(os.path.join(folder_path, sep6_file_name))
-hcp_shift_slots = load_excel('output\hcpshiftslots.xlsx')
-hcm = load_excel('output\hcm_sf_merged.xlsx')
-clock= load_excel('output\clock.xlsx')
+hcp_shift_slots = load_excel('output/hcpshiftslots.xlsx')
+hcm = load_excel('output/hcm_sf_merged.xlsx')
+clock= load_excel('output/clock.xlsx')
 # Assuming `shift_slots['iso_week']` is a list of ISO weeks
 available_weeks = sorted(shift_slots['iso_week'].unique())
 # Find the index of the current ISO week in the list
