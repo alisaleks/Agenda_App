@@ -896,8 +896,8 @@ shift_slots.rename(columns={
 current_date = datetime.now().strftime("%Y-%m-%d")
 output_file_path = f'shiftslots_{current_date}.xlsx' 
 shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')
-
-filtered_shift_slots = shift_slots[shift_slots['date_column'] == current_date]
+shift_slots.columns
+filtered_shift_slots = shift_slots[shift_slots['date'] == current_date]
 output_file_path_today= f'hours_{current_date}.xlsx'
 filtered_shift_slots.to_excel(output_file_path_today, index=False, engine='openpyxl')
 
@@ -1130,13 +1130,12 @@ all_composite_keys.columns
 output_file_path1 = 'hcm_sf_merged.xlsx'
 all_composite_keys.to_excel(output_file_path1, index=False, engine='openpyxl')
 
-
-def load_and_merge_files(directory, file_pattern):
+def load_and_merge_files(directory):
     # List to store dataframes
     all_dfs = []
     
-    # Regular expression to match the filename pattern flexibly
-    pattern = re.compile(r"1039963987_.*_1_1_ *\.xlsx")
+    # Regular expression to match the filename pattern
+    pattern = re.compile(r"\d+_[0-9]_1_1_\s*\.xlsx")
 
     # List files in directory for debugging
     print("Files in directory:", os.listdir(directory))
@@ -1148,8 +1147,15 @@ def load_and_merge_files(directory, file_pattern):
             file_path = os.path.join(directory, filename)
             print(f"Loading {filename}")
             # Load the file, skipping the first 4 rows, using the 5th row as header
-            df = pd.read_excel(file_path, header=6)
-            df['ID RH'] = df['ID RH'].astype(str).str.strip()
+            df = pd.read_excel(file_path, header=4)
+            print(f"Columns found: {df.columns.tolist()}")  # Print columns for debugging
+            
+            # Check if 'ID RH' exists in the columns
+            if 'ID RH' in df.columns:
+                df['ID RH'] = df['ID RH'].astype(str).str.strip()
+            else:
+                print(f"'ID RH' column not found in {filename}. Available columns: {df.columns.tolist()}")
+            
             all_dfs.append(df)
     
     # Merge all dataframes into one
@@ -1163,8 +1169,7 @@ def load_and_merge_files(directory, file_pattern):
 
 # Initial load of files
 directory = 'files'
-file_pattern = "1039963987_*_1_1_"
-clock = load_and_merge_files(directory, file_pattern)
+clock = load_and_merge_files(directory)
 
 
 # Function to check for new files and merge them
@@ -1193,9 +1198,9 @@ def check_for_new_files(clock, directory, file_pattern):
 
 clock.columns
 #Clock-in-out
-#clock = '1039467394_4_1_1_ .xlsx'
+clock = '1039467394_4_1_1_ .xlsx'
 # Load the Excel file, skipping the first 4 rows and using the 5th row as headers
-#clock = pd.read_excel(clock, header=6)
+clock = pd.read_excel(clock, header=6)
 #clock['ID RH'] = clock['ID RH'].astype(str).str.strip()
 # Convert to string, handling NaN and removing any .0 from floats
 clock['ID RH'] = clock['ID RH'].astype(str).replace(r'\.0$', '', regex=True).replace('nan', '')
