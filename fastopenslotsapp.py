@@ -171,6 +171,8 @@ def get_last_iso_week_end_date_current_month():
     
     return end_date
 
+folder_path = 'shiftslots'
+
 # Example usage: dynamically calculate start and end dates for the current month
 start_date = get_first_iso_week_start_date_current_month()
 end_date = get_last_iso_week_end_date_current_month()
@@ -211,35 +213,33 @@ yesterday_file_name = f"shiftslots_{yesterday_date.strftime('%Y-%m-%d')}.xlsx"
 sep6_file_name = f"shiftslots_{month_start_date.strftime('%Y-%m-%d')}.xlsx"
 last_working_day_file_name = f"shiftslots_{last_working_day.strftime('%Y-%m-%d')}.xlsx"
 
-shift_slots = load_excel(today_file_name)
+shift_slots = load_excel(os.path.join(folder_path, today_file_name))
 
 # Fallback to yesterday's file if today’s file is missing and it’s not Monday
 if shift_slots is None and current_date.weekday() != 0:
     print("Today's file not found, trying yesterday's file...")
-    shift_slots = load_excel(yesterday_file_name)
+    shift_slots = load_excel(os.path.join(folder_path, yesterday_file_name))
 
 # Fallback to last working day’s file if both today’s and yesterday’s files are missing
 if shift_slots is None:
     print("No file found for today or yesterday, trying the last working day's file...")
-    shift_slots = load_excel(last_working_day_file_name)
+    shift_slots = load_excel(os.path.join(folder_path, last_working_day_file_name))
 
 # Stop if no file is found after all attempts
 if shift_slots is None:
     st.error("No file found for today, yesterday, or the last working day.")
     st.stop()
-
-shift_slots_yesterday = load_excel(yesterday_file_name)
-
+shift_slots_yesterday = load_excel(os.path.join(folder_path, yesterday_file_name))
 if shift_slots_yesterday is None:
     print("Yesterday's file not found, finding the last working day...")
     last_working_day_yesterday = find_last_working_day(yesterday_date)
     last_working_day_yesterday_file_name = f"shiftslots_{last_working_day_yesterday.strftime('%Y-%m-%d')}.xlsx"
-    shift_slots_yesterday = load_excel(last_working_day_yesterday_file_name)
+    shift_slots_yesterday = load_excel(os.path.join(folder_path, last_working_day_yesterday_file_name))
 
-shift_slots_sep6 = load_excel(sep6_file_name)
-hcp_shift_slots = load_excel('hcpshiftslots.xlsx')
-hcm = load_excel('hcm_sf_merged.xlsx')
-clock= load_excel('clock.xlsx')
+shift_slots_sep6 = load_excel(os.path.join(folder_path, sep6_file_name))
+hcp_shift_slots = load_excel('output\hcpshiftslots.xlsx')
+hcm = load_excel('output\hcm_sf_merged.xlsx')
+clock= load_excel('output\clock.xlsx')
 # Assuming `shift_slots['iso_week']` is a list of ISO weeks
 available_weeks = sorted(shift_slots['iso_week'].unique())
 # Find the index of the current ISO week in the list
@@ -269,7 +269,6 @@ selected_region = st.sidebar.selectbox(
     index=0,  # Default to "All"
     help="Select a region or 'All' to view data for all regions."
 )
-
 # Filter data based on the selected region
 if selected_region == "All":
     filtered_shift_slots_by_region = shift_slots
@@ -816,14 +815,14 @@ with tab4:
     # Define the column configuration for "Shop Name"
     columnDefs = [
         {
-            "headerName": "Resource_Name",
+            "headerName": "Resource Name",
             "field": "Resource_Name",
             "resizable": True,
             "flex": 2,
             "minWidth": 150
         },
         {
-            "headerName": "Shop_Name",
+            "headerName": "Shop Name",
             "field": "Shop_Name",
             "resizable": True,
             "flex": 2,

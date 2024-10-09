@@ -93,7 +93,7 @@ absences_columns_to_string = {
 
 # Load datasets with only the necessary columns specified
 sfshifts = load_excel(
-    'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/SFshifts_query.xlsx', 
+    'datasets\SFshifts_query.xlsx', 
     dtype=shifts_columns_to_string,
     usecols=[
         'Shift[ShiftNumber]', 'Shift[Label]', 'Service Resource[Name]', 'Shop[GT_ShopCode__c]', 
@@ -105,7 +105,7 @@ sfshifts = load_excel(
 )
 
 resources = load_csv(
-    'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/resource_query.csv',  
+    'datasets/resource_query.csv',  
     dtype=resources_columns_to_string,
     usecols=[
         'Shop[GT_CountryCode__c]', 'Service Territory Member[EffectiveEndDate]', 
@@ -115,9 +115,9 @@ resources = load_csv(
         'Service Resource[GT_Role__c]','Service Resource[Name]'
     ], 
 )
-
+resources.head()
 appointments = load_excel(
-    'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/Appointments_aug_oct.xlsx', 
+    'datasets/Appointments_aug_oct.xlsx', 
     dtype=appointments_columns_to_string,
     usecols=[
         'Service Appointment[AppointmentNumber]', 'Service Appointment[ServiceTerritoryId]', 
@@ -130,9 +130,9 @@ appointments = load_excel(
         'Service Resource[Name]', 'Service Appointment[Status]', 'Service Appointment[LastModifiedDate]'
     ]
 )
-
+appointments.head()
 absences = load_csv(
-    'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/absences.csv',
+    'datasets/absences.csv',
     dtype=absences_columns_to_string,
     usecols=[
         'Resource Absence[AbsenceNumber]', 'Resource Absence[Start]', 'Resource Absence[End]', 'Service Resource[Name]', 
@@ -140,6 +140,7 @@ absences = load_csv(
 
     ]
 )
+absences.head()
 # Rename columns to match
 absences.rename(columns={
     'Resource Absence[Start]': 'Start',
@@ -152,7 +153,7 @@ absences.rename(columns={
 }, inplace=True)
 
 # Load regionmapping data
-region_mapping_path = 'C:/Users/aaleksan/OneDrive - Amplifon S.p.A/Documentos/python_alisa/saturation/Saturation/Satapp/agenda_app/regionmapping.xlsx'
+region_mapping_path = 'datasets/regionmapping.xlsx'
 region_mapping = load_excel(region_mapping_path)
 # Filter the original region_mapping DataFrame
 region_mapping = region_mapping[region_mapping['SYM'] != 'N']
@@ -894,11 +895,12 @@ shift_slots.rename(columns={
 }, inplace=True)
 # Save to Excel
 current_date = datetime.now().strftime("%Y-%m-%d")
-output_file_path = f'shiftslots_{current_date}.xlsx' 
+shift_folder_path = 'shiftslots' 
+output_file_path = os.path.join(shift_folder_path, f'shiftslots_{current_date}.xlsx')
 shift_slots.to_excel(output_file_path, index=False, engine='openpyxl')
-shift_slots.columns
+output_folder_path = 'output' 
 filtered_shift_slots = shift_slots[shift_slots['date'] == current_date]
-output_file_path_today= f'hours_{current_date}.xlsx'
+output_file_path_today = os.path.join(output_folder_path,f'hours_today.xlsx')
 filtered_shift_slots.to_excel(output_file_path_today, index=False, engine='openpyxl')
 
 # Now to convert it into a table format
@@ -958,9 +960,8 @@ sfshifts_merged['weekday'] = sfshifts_merged['ShiftDate'].dt.day_name()
 sfshifts_merged.columns
 
 # Save to Excel
-output_file_path2 = 'hcpshiftslots.xlsx'
+output_file_path2 = os.path.join(output_folder_path, 'hcpshiftslots.xlsx')
 sfshifts_merged.to_excel(output_file_path2, index=False, engine='openpyxl')
-
 
 hcmmap_columns_to_string = {
     'PersonalNumber HCM': str,
@@ -968,11 +969,11 @@ hcmmap_columns_to_string = {
     'PersonalNumber SF': str,
     'PersonalNumber': str
 }
-hcm_map = pd.read_excel('hcm_mapping.xlsx', engine='openpyxl', dtype=hcmmap_columns_to_string)
+hcm_map = pd.read_excel('datasets\hcm_mapping.xlsx', engine='openpyxl', dtype=hcmmap_columns_to_string)
 hcm_map['PersonalNumber HCM'] = hcm_map['PersonalNumber HCM'].astype(str)
 hcm_map['PersonalNumber HCM'] = hcm_map['PersonalNumber HCM'].str.strip()
 
-hcm_file = 'HCMShifts.csv'
+hcm_file = 'datasets\HCMShifts.csv'
 hcm_columns_to_string = {
     'Shop[Shop Code - Descr]': str,
     'Unique Employee[Employee Full Name]': str,
@@ -1127,9 +1128,8 @@ print(duplicates.head())
 all_composite_keys.drop(columns=['PersonalNumber_sf', 'PersonalNumber_hcm','GT_ServiceResource__r.Name', '_merge', 'SYM'], inplace=True)
 all_composite_keys.columns
 # Step 7: Save the result to Excel
-output_file_path1 = 'hcm_sf_merged.xlsx'
+output_file_path1 = os.path.join(output_folder_path,'hcm_sf_merged.xlsx')
 all_composite_keys.to_excel(output_file_path1, index=False, engine='openpyxl')
-
 
 def load_and_merge_files(directory, file_pattern):
     # List to store dataframes
@@ -1410,6 +1410,7 @@ clockin_merged[['hours_worked_numeric', 'hours_worked']].head()
 clockin_merged = clockin_merged.drop_duplicates(subset=['PersonalNumber', 'Date'])
 duplicates = clockin_merged[clockin_merged.duplicated(subset=['PersonalNumber', 'Date'])]
 duplicates
-output_file_path3 = 'clock.xlsx'
+output_file_path3 = os.path.join(output_folder_path,'clock.xlsx')
 clockin_merged.to_excel(output_file_path3, index=False, engine='openpyxl')
 clockin_merged.head(20)
+
