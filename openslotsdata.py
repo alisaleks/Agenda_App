@@ -258,7 +258,7 @@ shifts_filtered[(shifts_filtered['GT_ShopCode__c'] == '022') & (shifts_filtered[
 shifts_filtered['ShopResourceKey'] = shifts_filtered['GT_ShopCode__c'] + shifts_filtered['Shift[ServiceResourceId]']
 resources['ShopResourceKey'] = resources['GT_ShopCode__c'] + resources['Service Territory Member[ServiceResourceId]']
 
-check = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '022_40211') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-10-02')]
+check = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '86A_31073') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-10-02')]
 check
 # Step 1: Convert 'EffectiveStartDate' to datetime
 resources['EffectiveStartDate'] = pd.to_datetime(resources['Service Territory Member[EffectiveStartDate]'], errors='coerce')
@@ -267,20 +267,22 @@ resources['EffectiveStartDate'] = pd.to_datetime(resources['Service Territory Me
 resources_sorted = resources.sort_values(by=['ShopResourceKey', 'EffectiveStartDate'], ascending=[True, False])
 
 # Step 3: Drop duplicates in 'resources', keeping the latest 'EffectiveStartDate' for each 'ShopResourceKey'
-resources_unique = resources_sorted.drop_duplicates(subset=['ShopResourceKey'], keep='first')
-
+resources_sorted['PersonalNumber SF'] = resources_sorted['GT_ShopCode__c'] + '_' + resources_sorted['Service Resource[GT_PersonalNumber__c]']
 # Step 4: Add 'Active' status based on date range
-resources_unique['Active'] = resources_unique.apply(is_active, axis=1, args=(start_date, end_date))
-# Step 5: Merge 'shifts_filtered' with 'resources_unique' (add both 'Service Resource[IsActive]' and 'Active')
+resources_sorted['Active'] = resources_sorted.apply(is_active, axis=1, args=(start_date, end_date))
+# Step 5: Merge 'shifts_filtered' with 'resources_sorted' (add both 'Service Resource[IsActive]' and 'Active')
 shifts_filtered = shifts_filtered.merge(
-    resources_unique[['ShopResourceKey', 'Service Resource[IsActive]', 'Active']],
+    resources_sorted[['ShopResourceKey', 'Service Resource[IsActive]', 'Active']],
     on='ShopResourceKey',
     how='left'
 )
-
+# Step 9: Check the filtered data for 'PersonalNumberKey' and 'ShiftDate'
+check_1 = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '86A_31073') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-10-02')]
+check_2 = resources_sorted[resources_sorted['PersonalNumber SF'] == '86A_31073']
+print(check_1)
 # Step 6: Create a new key combining 'ShopResourceKey' and 'Shift[ShiftNumber]' to differentiate shifts
 shifts_filtered['UniqueShiftKey'] = shifts_filtered['ShopResourceKey'] + '_' + shifts_filtered['Shift[ShiftNumber]']
-
+shifts_filtered.columns
 # Step 7: Filter for only active resources
 shifts_filtered = shifts_filtered[(shifts_filtered['Service Resource[IsActive]'] == 'True') & (shifts_filtered['Active'] == True)]
 
@@ -288,11 +290,10 @@ shifts_filtered = shifts_filtered[(shifts_filtered['Service Resource[IsActive]']
 shifts_filtered = shifts_filtered.drop_duplicates(subset=['UniqueShiftKey'])
 
 # Step 9: Check the filtered data for 'PersonalNumberKey' and 'ShiftDate'
-check = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '022_40211') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-10-02')]
+check = shifts_filtered[(shifts_filtered['PersonalNumberKey'] == '86A_31073') & (pd.to_datetime(shifts_filtered['ShiftDate'], errors='coerce') == '2024-10-02')]
 
 print(check)
 
-shifts_filtered.columns
 
 shifts_filtered['ShiftDurationHours'] = shifts_filtered['ShiftDurationHours'].fillna(0)
 
@@ -375,7 +376,7 @@ absences_grouped[(absences_grouped['Resource.GT_PersonalNumber__c'] == '33104')]
 target_date = datetime.strptime('2024-10-03', '%Y-%m-%d').date()
 
 filtered_absences = absences_grouped[
-    (absences_grouped['PersonalNumberKey'] == '003_11126') & 
+    (absences_grouped['PersonalNumberKey'] == '86A_31073') & 
     (absences_grouped['AbsenceDate'] == target_date)
 ].head(60)
 filtered_absences[['PersonalNumberKey', 'AbsenceDate','Resource.Name', 'AbsenceStartTime',
@@ -405,7 +406,7 @@ shifts_grouped = shifts_filtered.groupby(['PersonalNumberKey', 'ShiftDate']).agg
     
 }).reset_index()
 shifts_grouped.head()
-check= shifts_grouped[shifts_grouped['PersonalNumberKey'] == '003_11126']
+check= shifts_grouped[shifts_grouped['PersonalNumberKey'] == '86A_31073']
 check[['PersonalNumberKey', 'ShiftDate', 'ShiftDurationHours','StartTime', 'EndTime']]
 # Step 1: Initialize an empty list to store expanded shifts
 shift_slots_5mins = []
@@ -437,7 +438,7 @@ for _, row in shifts_grouped.iterrows():
 
 # Step 3: Convert the list to a DataFrame
 expanded_shifts_df = pd.DataFrame(shift_slots_5mins)
-expanded_shifts_df[expanded_shifts_df['PersonalNumberKey'] == '003_11126'].head()
+expanded_shifts_df[expanded_shifts_df['PersonalNumberKey'] == '86A_31073'].head()
 # Assuming 'StartTime' and 'EndTime' columns are added during the slot expansion process.
 filtered_shifts_df = expanded_shifts_df[['ShiftSlot', 'StartTime', 'EndTime', 'ShiftLabel']]
 expanded_shifts_df.columns
@@ -574,11 +575,11 @@ sfshifts_merged = pd.merge(
     right_on=['PersonalNumberKey','AbsenceSlotDate'],
     suffixes=('', '_absence')
 )
-target_shop = '994'
+target_shop = '86A'
 
 # Filter based on shop and date
 filtered_sfshifts_merged = sfshifts_merged[
-    (sfshifts_merged['GT_ShopCode__c'] == target_shop) ]
+    (sfshifts_merged['PersonalNumberKey'] == '86A_31073') ]
 # Select only the specified columns
 filtered_columns = [
     'AbsenceSlotDate', 'AbsenceSlots',
@@ -605,6 +606,9 @@ sfshifts_merged['ShiftDurationHoursAdjusted'] = sfshifts_merged['ShiftDurationHo
 # Recalculate ShiftDurationMinutes based on adjusted hours
 sfshifts_merged['ShiftDurationMinutesAdjusted'] = sfshifts_merged['ShiftDurationHoursAdjusted'] * 60
 sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate'])
+sfshifts_merged.head()
+sfshifts_merged[sfshifts_merged['PersonalNumberKey'] == '86A_31073'].head()
+
 
 check = sfshifts_merged[(sfshifts_merged['GT_ShopCode__c'] == '88F') & (pd.to_datetime(sfshifts_merged['ShiftDate'], errors='coerce') == '2024-09-18')]
 columns_to_display = ['ShiftDurationHours', 'AbsenceDurationHours',  'Shop[Name]', 'Resource.Name']
@@ -972,7 +976,6 @@ hcmmap_columns_to_string = {
 hcm_map = pd.read_excel('datasets\hcm_mapping.xlsx', engine='openpyxl', dtype=hcmmap_columns_to_string)
 hcm_map['PersonalNumber HCM'] = hcm_map['PersonalNumber HCM'].astype(str)
 hcm_map['PersonalNumber HCM'] = hcm_map['PersonalNumber HCM'].str.strip()
-
 hcm_file = 'datasets\HCMShifts.csv'
 hcm_columns_to_string = {
     'Shop[Shop Code - Descr]': str,
@@ -1059,11 +1062,11 @@ shift_duration_per_week = sfshifts_merged.groupby(
     'ShiftDurationHours': 'sum',
     'GT_ServiceResource__r.Name': 'first',
 }).reset_index()
+shift_duration_per_week[shift_duration_per_week['CompositeKey'] == '86A_31073_2024_40'].head()
 shift_duration_per_week.rename(columns={'ShiftDurationHours': 'Duración SF'}, inplace=True)
 shift_duration_per_week['PersonalNumber'] = shift_duration_per_week['CompositeKey'].str[4:-8]
 # Now you can check for missing values again if needed
 missing_rows_after_fill = shift_duration_per_week[shift_duration_per_week['GT_ServiceResource__r.Name'].isna() | shift_duration_per_week['PersonalNumber'].isna()]
-
 # Print the rows that still have missing values (if any)
 print(missing_rows_after_fill[['CompositeKey', 'PersonalNumber', 'GT_ServiceResource__r.Name']])
 
@@ -1349,7 +1352,7 @@ check_data[['Date', 'hours_worked', 'hours_worked_numeric']]
 
 total_hours_per_employee_daily['Date'] = pd.to_datetime(total_hours_per_employee_daily['Date']).dt.date
 sfshifts_merged['ShiftDate'] = pd.to_datetime(sfshifts_merged['ShiftDate']).dt.date
-sfshifts_merged[sfshifts_merged['PersonalNumberKey'] == '003_11126'].head()
+sfshifts_merged[sfshifts_merged['PersonalNumberKey'] == '86A_31073'].head()
 sfshifts_merged['PersonalNumber'] = sfshifts_merged['PersonalNumberKey'].str[4:]
 sfshifts_merged_per_emp = sfshifts_merged.groupby(['PersonalNumber', 'ShiftDate'])[[ 'ShiftDurationHours', 'AbsenceDurationHours', 'ShiftDurationHoursAdjusted']].sum().reset_index()
 sfshifts_merged_per_emp[sfshifts_merged_per_emp['PersonalNumber']=='31992']
@@ -1365,8 +1368,16 @@ clockin_merged = pd.merge(
     indicator=True 
 )
 clockin_merged
-hcm_map_active = hcm_map[hcm_map['Active'] == True].copy()
-hcm_map_active
+
+hcm_map_active = hcm_map.merge(
+    resources_sorted[['PersonalNumber SF', 'Service Resource[IsActive]', 'Active']],
+    on='PersonalNumber SF',
+    how='left'
+)
+
+hcm_map_active = hcm_map_active[(hcm_map_active['Service Resource[IsActive]'] == 'True') & (hcm_map_active['Active'] == True)].copy()
+hcm_map_active.columns
+hcm_map_active.head()
 clockin_merged.head()
 clockin_merged = pd.merge(
     clockin_merged,

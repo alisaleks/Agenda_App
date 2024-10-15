@@ -1,5 +1,4 @@
 import sys
-
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -410,14 +409,13 @@ aggregated_data = filtered_data.groupby(['GT_ShopCode__c', 'Shop[Name]', 'date',
 
 aggregated_data['date'] = pd.to_datetime(aggregated_data['date']).dt.date
 check= aggregated_data[(aggregated_data['GT_ShopCode__c'] == '240')]
-
 # Aggregating data by GT_ShopCode__c, Shop[Name], date, and weekday
 hcp_data = filtered_hcp_shift_slots.groupby(['PersonalNumberKey', 'GT_ServiceResource__r.Name', 'GT_ShopCode__c', 'Shop[Name]', 'ShiftDate', 'weekday']).agg(
     AvailableHours=('ShiftDurationHoursAdjusted', 'sum'),
     BlockedHours=('AbsenceDurationHours', 'sum'),
 ).reset_index()
 
-tab6, tab1, tab2,tab4, tab3,tab5 = st.tabs(["Weekly Change Analysis", "Open Hours / Total Hours", "Blocked Hours %", "HCM vs SF", "ACT vs SF","REX"])
+tab6, tab1, tab2,tab4, tab3 = st.tabs(["Overview", "Open Hours / Total Hours", "Blocked Hours %", "HCM vs SF", "ACT vs SF"])
 
 with tab1: 
     if aggregated_data.empty:
@@ -455,10 +453,10 @@ with tab1:
         var totalHoursValue = params.data[totalHoursField];
         var openHoursValue = params.data[openHoursField];
 
-        if (params.data['Shop[Name]'] === 'Total') {
-            return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Make the total row bold and set a light background color for visibility
+        if (params.node.rowPinned) {
+            return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Style for pinned total row
         } else if (totalHoursValue === 0) {
-            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red background and white text for TotalHours = 0
+            return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red background for TotalHours = 0
         } else if (openHoursValue !== 0 && totalHoursValue !== 0) {
             return {'backgroundColor': '#95cd41'};  // Green for OpenHours != 0 and TotalHours != 0
         } else if (openHoursValue === 0 && totalHoursValue !== 0) {
@@ -467,7 +465,8 @@ with tab1:
             return null; 
         }
     }
-    """)
+""")
+
 
     custom_css = {
         ".ag-header-cell": {
@@ -545,6 +544,7 @@ with tab1:
     for col in numeric_columns_in_pivot:
         total_row[col] =  f"{int(df[col].sum().round(0)):,}"
 
+    pinned_top_row = [total_row]
 
     # Convert total_row to DataFrame
     total_df = pd.DataFrame(total_row, index=[0])
@@ -557,10 +557,14 @@ with tab1:
     for column in df.columns[1:]:
         if 'OpenHours' in column:
             gb.configure_column(column, cellStyle=js_code)
-
-    # Allow columns to fill the width and use autoHeight for rows
-    gb.configure_grid_options(domLayout= 'normal', autoSizeColumns='allColumns', enableFillHandle=True)
-
+    
+    # Add the pinned row to the grid options
+    gb.configure_grid_options(
+        pinnedTopRowData=pinned_top_row,  # Pin the total row at the top
+        domLayout='normal',
+        autoSizeColumns='allColumns',
+        enableFillHandle=True
+    )
     # Build grid options
     grid_options = gb.build()
 
@@ -570,7 +574,7 @@ with tab1:
     # Render the AG-Grid in Streamlit with full width
     try:
         AgGrid(
-            df_with_totals,
+            df,
             gridOptions=grid_options,
             enable_enterprise_modules=True,
             allow_unsafe_jscode=True,  # Allow JavaScript code execution
@@ -690,6 +694,7 @@ with tab2:
     # Convert total_row to DataFrame and append to the original data
     total_df_tab2 = pd.DataFrame(total_row_tab2, index=[0])
     df_with_totals_tab2 = pd.concat([total_df_tab2, df_tab2], ignore_index=True)
+    pinned_top_row_tab2 = [total_row_tab2]
 
     # Configure GridOptionsBuilder with JavaScript code
     gb_tab2 = GridOptionsBuilder.from_dataframe(df_with_totals_tab2)
@@ -697,9 +702,13 @@ with tab2:
     for column in df_tab2.columns[1:]:
         gb_tab2.configure_column(column, cellStyle=js_code)
 
-    # Allow columns to fill the width and use autoHeight for rows
-    gb_tab2.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
-
+    # Add the pinned row to the grid options
+    gb_tab2.configure_grid_options(
+        pinnedTopRowData=pinned_top_row_tab2,  # Pin the total row at the top
+        domLayout='normal',
+        autoSizeColumns='allColumns',
+        enableFillHandle=True
+    )
     # Build grid options
     grid_options_tab2 = gb_tab2.build()
 
@@ -709,7 +718,7 @@ with tab2:
     # Render the AG-Grid in Streamlit
     try:
         AgGrid(
-            df_with_totals_tab2,
+            df_tab2,
             gridOptions=grid_options_tab2,
             enable_enterprise_modules=True,
             allow_unsafe_jscode=True,  # Allow JavaScript code execution
@@ -876,6 +885,7 @@ with tab4:
     # Convert total_row to DataFrame
     total_df_tab4 = pd.DataFrame(total_row_tab4, index=[0])
     df_tab4_with_totals = pd.concat([total_df_tab4, df_tab4], ignore_index=True)  
+    pinned_top_row_tab4 = [total_row_tab4]
 
     # Configure GridOptionsBuilder with JavaScript code
     gb_tab4 = GridOptionsBuilder.from_dataframe(df_tab4_with_totals)
@@ -884,8 +894,12 @@ with tab4:
         gb_tab4.configure_column(field=column, cellStyle=js_code)
 
     # Configure grid options (same as Tab 1)
-    gb_tab4.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
-
+    gb_tab4.configure_grid_options(
+        pinnedTopRowData=pinned_top_row_tab4,
+        domLayout='normal',
+        autoSizeColumns='allColumns',
+        enableFillHandle=True
+    )
     # Build grid options
     grid_options_tab4 = gb_tab4.build()
 
@@ -894,7 +908,7 @@ with tab4:
 
     # Render the AG-Grid in Streamlit with full width and custom styling
     AgGrid(
-        df_tab4_with_totals,
+        df_tab4,
         gridOptions=grid_options_tab4,
         enable_enterprise_modules=True,
         allow_unsafe_jscode=True,
@@ -1064,7 +1078,6 @@ with tab3:
     for col in numeric_columns_in_pivot_tab3:
         col = col.replace(' ', '_') 
         if col in df_tab3.columns:  
-            # Convert column to numeric, ignoring errors to handle 'NC'
             numeric_values = pd.to_numeric(df_tab3[col], errors='coerce')
             total_value = numeric_values.sum(min_count=1)  # Sum ignoring non-numeric, use `min_count=1` to handle empty
             if pd.isna(total_value):
@@ -1072,6 +1085,9 @@ with tab3:
             else:
                 total_value = f"{int(total_value.round(0)):,}"  
             total_row_tab3[col] = total_value
+
+    pinned_top_row_tab3 = [total_row_tab3]
+
     # Convert total_row to DataFrame
     total_df_tab3 = pd.DataFrame(total_row_tab3, index=[0])
     df_tab3_with_totals = pd.concat([total_df_tab3, df_tab3], ignore_index=True)  
@@ -1082,8 +1098,12 @@ with tab3:
     for column in df_tab3[1:]:
         gb_tab3.configure_column(field=column, cellStyle=js_code)
 
-    gb_tab3.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
-
+    gb_tab3.configure_grid_options(
+        pinnedTopRowData=pinned_top_row_tab3,
+        domLayout='normal',
+        autoSizeColumns='allColumns',
+        enableFillHandle=True
+    )
     # Build grid options
     grid_options_tab3 = gb_tab3.build()
 
@@ -1092,7 +1112,7 @@ with tab3:
 
     # Render the AG-Grid in Streamlit with full width and custom styling
     AgGrid(
-        df_tab3_with_totals,
+        df_tab3,
         gridOptions=grid_options_tab3,
         enable_enterprise_modules=True,
         allow_unsafe_jscode=True,
@@ -1105,312 +1125,149 @@ with tab3:
 
 
 
-with tab5:
+# with tab5:
 
-    # Warning messages for empty data
-    if weekly_shift_slots.empty:
-        st.warning("No shops found for the selected filter criteria.")
-    if weekly_shift_slots_yesterday.empty:
-        st.warning("No shops found for the selected filter criteria.")
+#     # Warning messages for empty data
+#     if weekly_shift_slots.empty:
+#         st.warning("No shops found for the selected filter criteria.")
+#     if weekly_shift_slots_yesterday.empty:
+#         st.warning("No shops found for the selected filter criteria.")
 
-    # Define the date range for filtered_clock_noiso
-    start_date_act = pd.Timestamp('2024-10-03')
-    end_date_act = pd.Timestamp(datetime.now().date() - timedelta(days=1))
+#     # Define the date range for filtered_clock_noiso
+#     start_date_act = pd.Timestamp('2024-10-03')
+#     end_date_act = pd.Timestamp(datetime.now().date() - timedelta(days=1))
 
-    # Column layout
-    st.markdown("### Overview")
-    cols = st.columns(2)
+#     # Column layout
+#     st.markdown("### Overview")
+#     cols = st.columns(2)
 
-    # HCM vs SF Chart and Top Shops
-    with cols[0]:
-        # Step 1: Group filtered_hcm by 'iso_week' and sum 'Diferencia de hcm duración'
-        hcm_weekly_diff = filtered_hcm.groupby('iso_week').agg(
-            total_diff=('Diferencia de hcm duración', 'sum')
-        ).reset_index()
+#     # HCM vs SF Chart and Top Shops
+#     with cols[0]:
+#         # Step 1: Group filtered_hcm by 'iso_week' and sum 'Diferencia de hcm duración'
+#         hcm_weekly_diff = filtered_hcm.groupby('iso_week').agg(
+#             total_diff=('Diferencia de hcm duración', 'sum')
+#         ).reset_index()
 
-        # Create HCM vs SF line chart
-        fig_diff = px.line(
-            hcm_weekly_diff,
-            x='iso_week', 
-            y='total_diff',
-            labels={'iso_week': 'ISO Week', 'total_diff': 'Total Difference (HCM vs SF)'},
-            title="HCM vs SF Duration Difference Over Weeks",
-            markers=True
-        )
-        fig_diff.update_layout(
-            xaxis_title="Week Number",
-            yaxis_title="Total Difference",
-            hovermode="x unified"
-        )
-        fig_diff.update_traces(
-            hovertemplate='ISO Week: %{x}<br>Total Difference: %{y:.2f}'
-        )
-        cols[0].plotly_chart(fig_diff)
+#         # Create HCM vs SF line chart
+#         fig_diff = px.line(
+#             hcm_weekly_diff,
+#             x='iso_week', 
+#             y='total_diff',
+#             labels={'iso_week': 'ISO Week', 'total_diff': 'Total Difference (HCM vs SF)'},
+#             title="HCM vs SF Duration Difference Over Weeks",
+#             markers=True
+#         )
+#         fig_diff.update_layout(
+#             xaxis_title="Week Number",
+#             yaxis_title="Total Difference",
+#             hovermode="x unified"
+#         )
+#         fig_diff.update_traces(
+#             hovertemplate='ISO Week: %{x}<br>Total Difference: %{y:.2f}'
+#         )
+#         cols[0].plotly_chart(fig_diff)
 
-        # Get top 3 shops with the largest 'Diferencia de hcm duración'
-        top_shops_hcm = filtered_hcm.groupby('Shop Name').agg(
-            total_diff=('Diferencia de hcm duración', 'sum')
-        ).nlargest(3, 'total_diff').reset_index()
+#         # Get top 3 shops with the largest 'Diferencia de hcm duración'
+#         top_shops_hcm = filtered_hcm.groupby('Shop Name').agg(
+#             total_diff=('Diferencia de hcm duración', 'sum')
+#         ).nlargest(3, 'total_diff').reset_index()
 
-        # Display top 3 shops side-by-side under the HCM vs SF chart
-        hcm_cols = st.columns(3)
-        for i, row in enumerate(top_shops_hcm.iterrows()):
-            with hcm_cols[i]:
-                st.markdown(f"""
-                <div style="border: 2px solid #1f77b4; border-radius: 10px; padding: 10px; margin: 5px 0; background-color: #f9f9f9; text-align: center;">
-                    <strong>Shop {i + 1}: {row[1]['Shop Name']}</strong><br>
-                    Total Difference: <span style="color: #1f77b4; font-weight: bold;">{row[1]['total_diff']:.2f}</span>
-                </div>
-                """, unsafe_allow_html=True)
-
-
-    # ACT vs SF Chart and Top Shops
-    with cols[1]:
-        # Filter date range for ACT vs SF data
-        filtered_clock_date_range = filtered_clock_noiso[
-            (filtered_clock_noiso['Date'] >= start_date_act) & (filtered_clock_noiso['Date'] <= end_date_act)
-        ]
-
-        # Group by Date and sum 'Diferencia de act duración'
-        acd_weekly_diff = filtered_clock_date_range.groupby('Date').agg(
-            total_diff=('Diferencia de act duración', 'sum')
-        ).reset_index()
-
-        # Create ACT vs SF line chart
-        fig_acd_diff = px.line(
-            acd_weekly_diff,
-            x='Date',
-            y='total_diff',
-            labels={'Date': 'Day', 'total_diff': 'Total Difference (ACT vs SF)'},
-            title="ACT vs SF Duration Difference Over Days",
-            markers=True
-        )
-        fig_acd_diff.update_layout(
-            xaxis_title="Day",
-            yaxis_title="Total Difference",
-            hovermode="x unified"
-        )
-        fig_acd_diff.update_traces(
-            hovertemplate='Day: %{x}<br>Total Difference: %{y:.2f}',
-            line_color='red'
-        )
-        cols[1].plotly_chart(fig_acd_diff)
-
-        # Get top 3 shops with the largest 'Diferencia de act duración'
-        top_shops_acd = filtered_clock_date_range.groupby('Shop[Name]').agg(
-            total_diff=('Diferencia de act duración', 'sum')
-        ).nlargest(3, 'total_diff').reset_index()
-
-        # Display top 3 shops side-by-side under the ACT vs SF chart
-        acd_cols = st.columns(3)
-        for i, row in enumerate(top_shops_acd.iterrows()):
-            with acd_cols[i]:
-                st.markdown(f"""
-                <div style="border: 2px solid #d62728; border-radius: 10px; padding: 10px; margin: 5px 0; background-color: #f9f9f9; text-align: center;">
-                    <strong>Shop {i + 1}: {row[1]['Shop[Name]']}</strong><br>
-                    Total Difference: <span style="color: #d62728; font-weight: bold;">{row[1]['total_diff']:.2f}</span>
-                </div>
-                """, unsafe_allow_html=True)
+#         # Display top 3 shops side-by-side under the HCM vs SF chart
+#         hcm_cols = st.columns(3)
+#         for i, row in enumerate(top_shops_hcm.iterrows()):
+#             with hcm_cols[i]:
+#                 st.markdown(f"""
+#                 <div style="border: 2px solid #1f77b4; border-radius: 10px; padding: 10px; margin: 5px 0; background-color: #f9f9f9; text-align: center;">
+#                     <strong>Shop {i + 1}: {row[1]['Shop Name']}</strong><br>
+#                     Total Difference: <span style="color: #1f77b4; font-weight: bold;">{row[1]['total_diff']:.2f}</span>
+#                 </div>
+#                 """, unsafe_allow_html=True)
 
 
-    # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
-    weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
-        TotalHours=('TotalHours', 'sum'),
-        BlockedHours=('BlockedHours', 'sum'),
-        AvailableHours=('AvailableHours', 'sum'),
-        BookedHours=('BookedHours', 'sum'),
-        OpenHours=('OpenHours', 'sum')
-    ).reset_index()
+#     # ACT vs SF Chart and Top Shops
+#     with cols[1]:
+#         # Filter date range for ACT vs SF data
+#         filtered_clock_date_range = filtered_clock_noiso[
+#             (filtered_clock_noiso['Date'] >= start_date_act) & (filtered_clock_noiso['Date'] <= end_date_act)
+#         ]
 
-    weekly_aggregated = weekly_aggregated.fillna(0)
+#         # Group by Date and sum 'Diferencia de act duración'
+#         acd_weekly_diff = filtered_clock_date_range.groupby('Date').agg(
+#             total_diff=('Diferencia de act duración', 'sum')
+#         ).reset_index()
 
-    # Create an interactive time series graph with Plotly
-    fig = px.line(
-        weekly_aggregated, 
-        x='iso_week',  
-        y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours', 'OpenHours'],
-        labels={'iso_week': 'ISO Week', 'value': 'Hours'},  
-        title="Weekly Hours Overview",
-        markers=True  
-    )
+#         # Create ACT vs SF line chart
+#         fig_acd_diff = px.line(
+#             acd_weekly_diff,
+#             x='Date',
+#             y='total_diff',
+#             labels={'Date': 'Day', 'total_diff': 'Total Difference (ACT vs SF)'},
+#             title="ACT vs SF Duration Difference Over Days",
+#             markers=True
+#         )
+#         fig_acd_diff.update_layout(
+#             xaxis_title="Day",
+#             yaxis_title="Total Difference",
+#             hovermode="x unified"
+#         )
+#         fig_acd_diff.update_traces(
+#             hovertemplate='Day: %{x}<br>Total Difference: %{y:.2f}',
+#             line_color='red'
+#         )
+#         cols[1].plotly_chart(fig_acd_diff)
 
-    # Customize the layout for better readability
-    fig.update_layout(
-        xaxis_title="Week Number",  
-        yaxis_title="Hours", 
-        hovermode="x unified"  
-    )
+#         # Get top 3 shops with the largest 'Diferencia de act duración'
+#         top_shops_acd = filtered_clock_date_range.groupby('Shop[Name]').agg(
+#             total_diff=('Diferencia de act duración', 'sum')
+#         ).nlargest(3, 'total_diff').reset_index()
 
-    fig.update_traces(
-        hovertemplate='%{y:,.0f} Hours<br>ISO Week: %{x}'
-    )
+#         # Display top 3 shops side-by-side under the ACT vs SF chart
+#         acd_cols = st.columns(3)
+#         for i, row in enumerate(top_shops_acd.iterrows()):
+#             with acd_cols[i]:
+#                 st.markdown(f"""
+#                 <div style="border: 2px solid #d62728; border-radius: 10px; padding: 10px; margin: 5px 0; background-color: #f9f9f9; text-align: center;">
+#                     <strong>Shop {i + 1}: {row[1]['Shop[Name]']}</strong><br>
+#                     Total Difference: <span style="color: #d62728; font-weight: bold;">{row[1]['total_diff']:.2f}</span>
+#                 </div>
+#                 """, unsafe_allow_html=True)
 
-    # Display the plotly graph in Streamlit
-    st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("### Tiendas que necesitan atención urgente (Para Hoy)")
+#     # Step 1: Aggregating summary_tab_data by iso_week to get total hours per week
+#     weekly_aggregated = weekly_shift_slots.groupby('iso_week').agg(
+#         TotalHours=('TotalHours', 'sum'),
+#         BlockedHours=('BlockedHours', 'sum'),
+#         AvailableHours=('AvailableHours', 'sum'),
+#         BookedHours=('BookedHours', 'sum'),
+#         OpenHours=('OpenHours', 'sum')
+#     ).reset_index()
 
-    # Get today's date
-    today = datetime.now().date()
+#     weekly_aggregated = weekly_aggregated.fillna(0)
 
-    # Convert the 'date' column to datetime
-    weekly_shift_slots['date'] = pd.to_datetime(weekly_shift_slots['date'], format='%Y-%m-%d')
+#     # Create an interactive time series graph with Plotly
+#     fig = px.line(
+#         weekly_aggregated, 
+#         x='iso_week',  
+#         y=['TotalHours', 'BlockedHours', 'AvailableHours', 'BookedHours', 'OpenHours'],
+#         labels={'iso_week': 'ISO Week', 'value': 'Hours'},  
+#         title="Weekly Hours Overview",
+#         markers=True  
+#     )
 
-    # Step 1: Filter the dataset to include necessary columns for today
-    filtered_data = weekly_shift_slots[weekly_shift_slots['date'].dt.date == today][['Region', 'Shop[Name]', 'BlockedHoursPercentage']].copy()
+#     # Customize the layout for better readability
+#     fig.update_layout(
+#         xaxis_title="Week Number",  
+#         yaxis_title="Hours", 
+#         hovermode="x unified"  
+#     )
 
-    # Sort by region and by highest BlockedHoursPercentage
-    top_shops_by_region = (
-        filtered_data.sort_values(by='BlockedHoursPercentage', ascending=False)
-        .groupby('Region')
-        .head(4)  # Get top 4 shops per region
-    )
+#     fig.update_traces(
+#         hovertemplate='%{y:,.0f} Hours<br>ISO Week: %{x}'
+#     )
 
-    # Get unique regions
-    regions = top_shops_by_region['Region'].unique()
-
-    # Custom CSS for styling the boxes and the shop list
-    st.markdown("""
-        <style>
-        .custom-box {
-            border: 2px solid #cc0641;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 10px;
-            background-color: #f9f9f9;
-            text-align: center;
-            width: 100%;
-            box-sizing: border-box;
-        }
-        .custom-box h5 {
-            color: #cc0641;
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }
-        .shop-list {
-            margin-top: 10px;
-            text-align: left;
-            line-height: 1.6;  /* Increased line height for readability */
-        }
-        .shop-list p {
-            font-size: 14px;
-            margin: 0;
-        }
-        .shop-list strong {
-            color: #333;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # Create 4 columns to display 4 regions in one row
-    cols = st.columns(4)
-
-    # Iterate over regions and display them in the respective column
-    for i, region in enumerate(regions):
-        with cols[i % 4]:  # Ensure 4 regions per row
-            # Start the custom box div and shop list inside it
-            top_shops = top_shops_by_region[top_shops_by_region['Region'] == region]
-
-            shop_list = ""
-            for index, row in top_shops.iterrows():
-                shop_name = row['Shop[Name]']
-                blocked_pct = row['BlockedHoursPercentage']
-                
-                # Append shop details to the list
-                shop_list += f"<p>- <strong>{shop_name}</strong>: {blocked_pct:,.0f}% Blocked Hours</p>"
-
-            # Render both the header and the shop list inside the box
-            st.markdown(f"""
-            <div class="custom-box">
-                <h5>{region}</h5>
-                <div class="shop-list">
-                    {shop_list}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.markdown("### Tiendas Cerradas (Para Hoy)")
-
-    # Step 1: Filter the dataset for closed shops (TotalHours = 0 or BlockedHoursPercentage = 100%)
-    closed_shops_data = weekly_shift_slots[
-        (weekly_shift_slots['date'].dt.date == today) &
-        ((weekly_shift_slots['TotalHours'] == 0) | (weekly_shift_slots['BlockedHoursPercentage'] == 100))
-    ][['Region', 'Shop[Name]', 'TotalHours', 'BlockedHoursPercentage']].copy()
-
-    # Sort by region
-    closed_shops_data = closed_shops_data.sort_values(by='Region')
-
-    # Get unique regions with closed shops
-    regions_with_closed_shops = closed_shops_data['Region'].unique()
-
-    # Custom CSS for styling the boxes and the shop list (same style as before)
-    st.markdown("""
-        <style>
-        .custom-box {
-            border: 2px solid #cc0641;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 10px;
-            background-color: #f9f9f9;
-            text-align: center;
-            width: 100%;
-            box-sizing: border-box;
-        }
-        .custom-box h5 {
-            color: #cc0641;
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }
-        .shop-list {
-            margin-top: 10px;
-            text-align: left;
-            line-height: 1.6;  /* Increased line height for readability */
-        }
-        .shop-list p {
-            font-size: 14px;
-            margin: 0;
-        }
-        .shop-list strong {
-            color: #333;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # Split regions into groups of 4 (for displaying in 4 columns per row)
-    for start_idx in range(0, len(regions_with_closed_shops), 4):
-        cols_closed = st.columns(4)  # Create 4 columns for this row
-        
-        # Display up to 4 regions in the current row
-        for i, region in enumerate(regions_with_closed_shops[start_idx:start_idx + 4]):
-            with cols_closed[i]:  # Ensure 4 regions per row
-                # Filter the data for the current region
-                closed_shops = closed_shops_data[closed_shops_data['Region'] == region]
-
-                shop_list = ""
-                for index, row in closed_shops.iterrows():
-                    shop_name = row['Shop[Name]']
-                    total_hours = row['TotalHours']
-                    blocked_pct = row['BlockedHoursPercentage']
-
-                    # Append shop details to the list
-                    shop_list += f"<p>- <strong>{shop_name}</strong>: {total_hours} Hours, {blocked_pct:,.0f}% Blocked</p>"
-
-                # Render both the header and the shop list inside the box
-                st.markdown(f"""
-                <div class="custom-box">
-                    <h5>{region}</h5>
-                    <div class="shop-list">
-                        {shop_list}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+#     # Display the plotly graph in Streamlit
+#     st.plotly_chart(fig, use_container_width=True)
                     
-# Format the month_start_date as a string like "October 1"
-
 with tab6:
     if weekly_shift_slots.empty:
         st.warning("No shops found for the selected filter criteria.")
@@ -1424,22 +1281,35 @@ with tab6:
     comparison_options = [f'Comparison with start of the month ({formatted_month_start_date})', 'Comparison with yesterday']
     selected_comparison = st.selectbox('Select Comparison:', comparison_options)
     
-    metric_options = ['Shift Hours % change', 'Blocked Hours % change', 'Booked Hours % change', 'Open Hours % change']
+    metric_options = [
+    'Shift Hours % change', 'Blocked Hours % change', 'Booked Hours % change', 'Open Hours % change', 'Saturation % change']
     selected_metric = st.selectbox('Select Metric:', metric_options)
     metric_map = {
         'Shift Hours % change': 'TotalHours',
         'Blocked Hours % change': 'BlockedHours',
         'Booked Hours % change': 'BookedHours',
-        'Open Hours % change': 'OpenHours'
+        'Open Hours % change': 'OpenHours',
+        'Saturation % change': 'Saturation'
     }
-
     # Get the column associated with the selected metric
     metric_column = metric_map[selected_metric]
 
     weekly_shift_slots = weekly_shift_slots[(weekly_shift_slots['date'] >= month_start_date) & (weekly_shift_slots['date'] <= month_end_date)].copy()
     weekly_shift_slots_yesterday = weekly_shift_slots_yesterday[(weekly_shift_slots_yesterday['date'] >= month_start_date) & (weekly_shift_slots_yesterday['date'] <= month_end_date)].copy()
     weekly_shift_sep6 = weekly_shift_sep6[(weekly_shift_sep6['date'] >= month_start_date) & (weekly_shift_sep6['date'] <= month_end_date)].copy()        
-
+    # Step: Calculate Saturation for each DataFrame
+    weekly_shift_slots['Saturation'] = (
+        (weekly_shift_slots['BlockedHours'] + weekly_shift_slots['BookedHours']) /
+        weekly_shift_slots['TotalHours'].replace(0, np.nan)
+    ).fillna(0)
+    weekly_shift_slots_yesterday['Saturation'] = (
+        (weekly_shift_slots_yesterday['BlockedHours'] + weekly_shift_slots_yesterday['BookedHours']) /
+        weekly_shift_slots_yesterday['TotalHours'].replace(0, np.nan)
+    ).fillna(0)
+    weekly_shift_sep6['Saturation'] = (
+        (weekly_shift_sep6['BlockedHours'] + weekly_shift_sep6['BookedHours']) /
+        weekly_shift_sep6['TotalHours'].replace(0, np.nan)
+    ).fillna(0)
     # Pivot the table for Tab 4
     weekly_aggregated = weekly_shift_slots.pivot_table(
         index='Region',
@@ -1472,8 +1342,6 @@ with tab6:
     )
     weekly_aggregated_sep6 = weekly_aggregated_sep6.fillna(0)
     weekly_aggregated_sep6 = weekly_aggregated_sep6.reset_index()
-    
-    # Adjust the logic to use different dataframes based on the comparison selection
     if selected_comparison == f'Comparison with start of the month ({formatted_month_start_date})':
         comparison_df = weekly_aggregated_sep6  # Assuming Sep 6 data is stored in weekly_aggregated_yesterday
         comparison_label = formatted_month_start_date
@@ -1509,13 +1377,36 @@ with tab6:
             f'{metric_column}_comparison': 'sum'  # Sum yesterday's metric values
         }
     ).reset_index()
-    weekly_totals = merged_grouped.groupby('iso_week').agg(
+    weekly_totals = merged_data.groupby('iso_week').agg(
         {f'{metric_column}_today': 'sum', f'{metric_column}_comparison': 'sum'}
     ).reset_index()
+    
+    if selected_metric == 'Saturation % change':
+        # Calculate the total Saturation for each iso_week
+        weekly_totals['Saturation_today'] = (
+            weekly_shift_slots.groupby('iso_week').apply(
+                lambda df: (df['BlockedHours'].sum() + df['BookedHours'].sum()) / df['TotalHours'].sum()
+            )
+        ).fillna(0)
+        
+        weekly_totals['Saturation_comparison'] = (
+            weekly_shift_slots_yesterday.groupby('iso_week').apply(
+                lambda df: (df['BlockedHours'].sum() + df['BookedHours'].sum()) / df['TotalHours'].sum()
+            )
+        ).fillna(0)
 
-    # Step 3: Calculate monthly totals (sum over all weeks)
-    monthly_total_today = weekly_totals[f'{metric_column}_today'].sum()
-    monthly_total_comparison = weekly_totals[f'{metric_column}_comparison'].sum()
+        # Calculate the monthly total saturation using sums
+        monthly_total_today = (
+            weekly_shift_slots['BlockedHours'].sum() + weekly_shift_slots['BookedHours'].sum()
+        ) / weekly_shift_slots['TotalHours'].sum()
+
+        monthly_total_comparison = (
+            weekly_shift_slots_yesterday['BlockedHours'].sum() + weekly_shift_slots_yesterday['BookedHours'].sum()
+        ) / weekly_shift_slots_yesterday['TotalHours'].sum()
+    else:
+        # Existing calculation for other metrics
+        monthly_total_today = weekly_totals[f'{metric_column}_today'].sum()
+        monthly_total_comparison = weekly_totals[f'{metric_column}_comparison'].sum()
 
     # Step 7: Add the month column for each region based on the aggregated data
     region_month_totals = merged_grouped.groupby('Region').agg(
@@ -1547,6 +1438,11 @@ with tab6:
         columns='iso_week',
         values='percentage_change',
     ).reset_index()
+
+    # Adjust column names and convert to list for concatenation
+    iso_weeks = weekly_totals['iso_week'].tolist()
+    columns_list = ['Region'] + [f'Week {week}' for week in iso_weeks] + ['Month Total']
+
     # Append the 'Month Total' column to the pivot table for each region
     merged_pivot['Month Total'] = merged_pivot['Region'].map(
         dict(zip(region_month_totals['Region'], region_month_totals['month_percentage_change']))
@@ -1554,16 +1450,29 @@ with tab6:
 
     # Fill NaN values for the 'Total' row in the 'Month Total' column
     merged_pivot['Month Total'].fillna(monthly_percentage_change, inplace=True)
-    # Step 5: Append the total row to the pivot table
-    total_row = pd.DataFrame(
-        [['Total'] + weekly_totals['total_percentage_change'].tolist() + [monthly_percentage_change]], 
-        columns=merged_pivot.columns.tolist()  
-    )
-    merged_pivot = pd.concat([merged_pivot, total_row], ignore_index=True)
+    # Append the 'Total' row to the pivot table for each region
+    if selected_metric == 'Saturation % change':
+        # Make sure Saturation values are filled with 0 if they are NaN
+        total_values = weekly_totals['Saturation_today'].fillna(0).tolist()
+        total_values.append(monthly_total_today)
+        total_row_tab6 = pd.DataFrame(
+            [['Total'] + total_values], 
+            columns=merged_pivot.columns.tolist()  
+        )
+    else:
+        total_values = weekly_totals['total_percentage_change'].fillna(0).tolist()
+        total_values.append(monthly_percentage_change)
+        total_row_tab6 = pd.DataFrame(
+            [['Total'] + total_values], 
+            columns=merged_pivot.columns.tolist()  
+        )
+
+
+    merged_pivot = pd.concat([merged_pivot, total_row_tab6], ignore_index=True)
 
     # Optional: Rename the columns for better display (e.g., 'Week 36', 'Week 37', etc.)
     merged_pivot.columns = ['Region'] + [f"Week {int(col)}" if col != 'Month Total' else col for col in merged_pivot.columns[1:]]
-    
+
     # Custom CSS for the table (same as Tab 2, adjusted if needed)
     custom_css_tab6 = {
         ".ag-header-cell": {
@@ -1571,6 +1480,10 @@ with tab6:
             "color": "white !important",
             "font-weight": "bold",
             "padding": "4px"
+        },
+        ".total-row": {
+            'backgroundColor': '#e0e0e0',
+            'fontWeight': 'bold'
         },
         ".ag-cell": {
             "padding": "2px",
@@ -1659,6 +1572,25 @@ with tab6:
             }
         }
         """)
+    elif selected_metric == 'Saturation % change':
+        color_coding_js = JsCode("""
+        function(params) {
+            var value = params.value;
+
+            if (params.data['Region'] === 'Total') {
+                return {'font-weight': 'bold', 'backgroundColor': '#e0e0e0'};  // Grey background for total row
+            } else {
+                // Color coding for Saturation % Change
+                if (value < 50) {
+                    return {'backgroundColor': '#95cd41', 'color': 'black'};  // Green for under 50% saturation
+                } else if (value >= 50) {
+                    return {'backgroundColor': '#cc0641', 'color': 'white'};  // Red for over or equal 50% saturation
+                }
+                return null;  // Default styling for other values
+            }
+        }
+        """)
+
 
 
     # Create column definitions for percentage change table
@@ -1679,13 +1611,19 @@ with tab6:
         gb_tab6_pct_change.configure_column(col, cellStyle=color_coding_js)
 
     # Grid options for auto-sizing and responsive layout
-    gb_tab6_pct_change.configure_grid_options(domLayout='normal', autoSizeColumns='allColumns', enableFillHandle=True)
-
+    gb_tab6_pct_change.configure_grid_options(
+        domLayout='normal', 
+        autoSizeColumns='allColumns', 
+        enableFillHandle=True, 
+        rowClassRules={'total-row': "data.Region === 'Total'"}
+    )
     # Build grid options
     grid_options_tab6_pct_change = gb_tab6_pct_change.build()
 
     # Add custom column definitions to grid options
     grid_options_tab6_pct_change['columnDefs'] = columnDefs_tab6_pct_change
+    grid_options_tab6_pct_change['pinnedBottomRowData'] = [merged_pivot.iloc[-1].to_dict()]
+    merged_pivot = merged_pivot.iloc[:-1]  # Drop the last row
 
     # Render pivot_pct_change table using AgGrid
     st.markdown(f"### {selected_metric}: Today vs {comparison_label}")
@@ -1696,7 +1634,7 @@ with tab6:
         enable_enterprise_modules=True,
         allow_unsafe_jscode=True,  # Allow JavaScript code execution
         fit_columns_on_grid_load=True,
-        height=187,  # Set grid height for percentage change table
+        height=175,  # Set grid height for percentage change table
         width='100%',
         theme='streamlit',
         custom_css=custom_css_tab6
@@ -1765,3 +1703,126 @@ with tab6:
 
     # Render the plot in Streamlit
     st.plotly_chart(fig)
+    # Get today's date
+    today = datetime.now().date()
+
+    # Convert the 'date' column to datetime
+    weekly_shift_slots['date'] = pd.to_datetime(weekly_shift_slots['date'], format='%Y-%m-%d')
+
+    # Step 1: Filter the dataset to include necessary columns for today
+    filtered_data = weekly_shift_slots[weekly_shift_slots['date'].dt.date == today][['Region', 'Shop[Name]', 'BlockedHoursPercentage']].copy()
+    # Custom CSS for styling the boxes and the shop list
+    st.markdown("""
+        <style>
+        .custom-box {
+            border: 2px solid #cc0641;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+            text-align: center;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .custom-box h5 {
+            color: #cc0641;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        .shop-list {
+            margin-top: 10px;
+            text-align: left;
+            line-height: 1.6;  /* Increased line height for readability */
+        }
+        .shop-list p {
+            font-size: 14px;
+            margin: 0;
+        }
+        .shop-list strong {
+            color: #333;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Create 4 columns to display 4 regions in one row
+    cols = st.columns(4)
+
+    st.markdown("### Tiendas Cerradas (Para Hoy)")
+
+    # Step 1: Filter the dataset for closed shops (TotalHours = 0 or BlockedHoursPercentage = 100%)
+    closed_shops_data = weekly_shift_slots[
+        (weekly_shift_slots['date'].dt.date == today) &
+        ((weekly_shift_slots['TotalHours'] == 0) | (weekly_shift_slots['BlockedHoursPercentage'] == 100))
+    ][['Region', 'Shop[Name]', 'TotalHours', 'BlockedHoursPercentage']].copy()
+
+    # Sort by region
+    closed_shops_data = closed_shops_data.sort_values(by='Region')
+
+    # Get unique regions with closed shops
+    regions_with_closed_shops = closed_shops_data['Region'].unique()
+
+    # Custom CSS for styling the boxes and the shop list (same style as before)
+    st.markdown("""
+        <style>
+        .custom-box {
+            border: 2px solid #cc0641;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+            text-align: center;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .custom-box h5 {
+            color: #cc0641;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        .shop-list {
+            margin-top: 10px;
+            text-align: left;
+            line-height: 1.6;  /* Increased line height for readability */
+        }
+        .shop-list p {
+            font-size: 14px;
+            margin: 0;
+        }
+        .shop-list strong {
+            color: #333;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Split regions into groups of 4 (for displaying in 4 columns per row)
+    for start_idx in range(0, len(regions_with_closed_shops), 4):
+        cols_closed = st.columns(4)  # Create 4 columns for this row
+        
+        # Display up to 4 regions in the current row
+        for i, region in enumerate(regions_with_closed_shops[start_idx:start_idx + 4]):
+            with cols_closed[i]:  # Ensure 4 regions per row
+                # Filter the data for the current region
+                closed_shops = closed_shops_data[closed_shops_data['Region'] == region]
+
+                shop_list = ""
+                for index, row in closed_shops.iterrows():
+                    shop_name = row['Shop[Name]']
+                    total_hours = row['TotalHours']
+                    blocked_pct = row['BlockedHoursPercentage']
+
+                    # Append shop details to the list
+                    shop_list += f"<p>- <strong>{shop_name}</strong>: {total_hours} Hours, {blocked_pct:,.0f}% Blocked</p>"
+
+                # Render both the header and the shop list inside the box
+                st.markdown(f"""
+                <div class="custom-box">
+                    <h5>{region}</h5>
+                    <div class="shop-list">
+                        {shop_list}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
