@@ -93,7 +93,7 @@ absences_columns_to_string = {
 
 # Load datasets with only the necessary columns specified
 sfshifts = load_excel(
-    'datasets\SFshifts_query.xlsx', 
+    os.path.join('datasets', 'SFshifts_query.xlsx'), 
     dtype=shifts_columns_to_string,
     usecols=[
         'Shift[ShiftNumber]', 'Shift[Label]', 'Service Resource[Name]', 'Shop[GT_ShopCode__c]', 
@@ -105,7 +105,7 @@ sfshifts = load_excel(
 )
 
 resources = load_csv(
-    'datasets/resource_query.csv',  
+    os.path.join('datasets', 'resource_query.csv'),  
     dtype=resources_columns_to_string,
     usecols=[
         'Shop[GT_CountryCode__c]', 'Service Territory Member[EffectiveEndDate]', 
@@ -115,9 +115,10 @@ resources = load_csv(
         'Service Resource[GT_Role__c]','Service Resource[Name]'
     ], 
 )
+
 resources.head()
 appointments = load_excel(
-    'datasets/Appointments_aug_oct.xlsx', 
+    os.path.join('datasets', 'Appointments_aug_oct.xlsx'), 
     dtype=appointments_columns_to_string,
     usecols=[
         'Service Appointment[AppointmentNumber]', 'Service Appointment[ServiceTerritoryId]', 
@@ -132,12 +133,11 @@ appointments = load_excel(
 )
 appointments.head()
 absences = load_csv(
-    'datasets/absences.csv',
+    os.path.join('datasets', 'absences.csv'),
     dtype=absences_columns_to_string,
     usecols=[
         'Resource Absence[AbsenceNumber]', 'Resource Absence[Start]', 'Resource Absence[End]', 'Service Resource[Name]', 
         'Service Resource[GT_PersonalNumber__c]', 'User[GT_StoreCode__c]', 'Service Resource[Id]','Resource Absence[Type]'
-
     ]
 )
 absences.head()
@@ -153,8 +153,8 @@ absences.rename(columns={
 }, inplace=True)
 
 # Load regionmapping data
-region_mapping_path = 'datasets/regionmapping.xlsx'
-region_mapping = load_excel(region_mapping_path)
+region_mapping = load_excel(os.path.join('datasets', 'regionmapping.xlsx'))
+
 # Filter the original region_mapping DataFrame
 region_mapping = region_mapping[region_mapping['SYM'] != 'N']
 
