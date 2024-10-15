@@ -1,4 +1,4 @@
-name: Update Dataset
+name: Update Dataset and Run Scripts
 
 on:
   schedule:
@@ -6,18 +6,30 @@ on:
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
-  update-dataset:
+  update-dataset-and-run-scripts:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.11.9'  
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt  # Remove this step if no dependencies
+
+      - name: Run Python script
+        run: python openslotsdata.py 
+
       - name: Check for changes
         id: check_changes
         run: |
           git fetch
-          if git diff --quiet; then  # Check for any changes in the repository
+          if git diff --quiet; then
             echo "No changes detected."
             echo "changes_detected=false" >> $GITHUB_ENV
           else
@@ -26,16 +38,17 @@ jobs:
           fi
 
       - name: Commit and push changes
-        if: env.changes_detected == 'true'  # Proceed if changes detected
+        if: env.changes_detected == 'true'
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add --all  # Add all changes
-          git commit -m 'Update dataset and other changes'  # Updated commit message
-          git push
+          git add --all
+          git commit -m 'Automatic dataset update'
+          git pull origin main --rebase  # Adjust to `git pull origin main` if rebase issues arise
+          git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: No changes found
-        if: env.changes_detected == 'false'  # If no changes, this step runs
+        if: env.changes_detected == 'false'
         run: echo "No changes detected, skipping commit."
