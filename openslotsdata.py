@@ -965,6 +965,7 @@ sfshifts_merged.columns
 
 # Save to Excel
 output_file_path2 = os.path.join(output_folder_path, 'hcpshiftslots.xlsx')
+
 sfshifts_merged.to_excel(output_file_path2, index=False, engine='openpyxl')
 
 hcmmap_columns_to_string = {
@@ -973,16 +974,16 @@ hcmmap_columns_to_string = {
     'PersonalNumber SF': str,
     'PersonalNumber': str
 }
-hcm_map = pd.read_excel('datasets\hcm_mapping.xlsx', engine='openpyxl', dtype=hcmmap_columns_to_string)
+hcm_map = load_excel(os.path.join('datasets', 'hcm_mapping.xlsx'), engine='openpyxl', dtype=hcmmap_columns_to_string)
+
 hcm_map['PersonalNumber HCM'] = hcm_map['PersonalNumber HCM'].astype(str)
 hcm_map['PersonalNumber HCM'] = hcm_map['PersonalNumber HCM'].str.strip()
-hcm_file = 'datasets\HCMShifts.csv'
 hcm_columns_to_string = {
     'Shop[Shop Code - Descr]': str,
     'Unique Employee[Employee Full Name]': str,
     'Unique Employee[Employee Person Number]': str
 }
-HCMdata = pd.read_csv(hcm_file, engine='python', dtype=hcm_columns_to_string, usecols=[
+HCMdata = pd.read_csv(os.path.join('datasets', 'HCMShifts.csv'), engine='python', dtype=hcm_columns_to_string, usecols=[
     'Shop[Shop Code - Descr]', 'Unique Employee[Employee Full Name]', 'Unique Employee[Employee Person Number]',
     'Calendar[ISO Week]', 'Calendar[ISO Year]', '[Audiologist_FTE]'
 ])
@@ -1196,14 +1197,6 @@ def check_for_new_files(clock, directory, file_pattern):
 # Convert 'ID RH' to string, remove '.0' for floats, and handle NaN
 clock['ID RH'] = clock['ID RH'].fillna('').astype(str).str.replace(r'\.0$', '', regex=True)
 clock.tail(5)
-#Clock-in-out
-#clock = '1039467394_4_1_1_ .xlsx'
-# Load the Excel file, skipping the first 4 rows and using the 5th row as headers
-#clock = pd.read_excel(clock, header=6)
-#clock['ID RH'] = clock['ID RH'].astype(str).str.strip()
-# Convert to string, handling NaN and removing any .0 from floats
-#clock['ID RH'] = clock['ID RH'].astype(str).replace(r'\.0$', '', regex=True).replace('nan', '')
-
 # Assuming 'df' is the DataFrame and 'Id.Empleado' is the column to check for duplicates
 duplicates = clock[clock.duplicated(subset=['ID RH', 'Fecha y hora fichaje/declarac.'], keep=False)]
 
