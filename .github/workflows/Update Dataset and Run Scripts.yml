@@ -12,8 +12,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-        with:
-          persist-credentials: false 
 
       - name: Set up Python
         uses: actions/setup-python@v3
@@ -22,7 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt  
+          pip install -r requirements.txt  # Remove this step if no dependencies
 
       - name: Run Python script
         run: python openslotsdata.py 
@@ -30,13 +28,13 @@ jobs:
       - name: Check for changes
         id: check_changes
         run: |
-          git status --porcelain > changes.txt
-          if [ -s changes.txt ]; then
-            echo "Changes detected."
-            echo "changes_detected=true" >> $GITHUB_ENV
-          else
+          git fetch
+          if git diff --quiet; then
             echo "No changes detected."
             echo "changes_detected=false" >> $GITHUB_ENV
+          else
+            echo "Changes detected."
+            echo "changes_detected=true" >> $GITHUB_ENV
           fi
 
       - name: Commit and push changes
@@ -47,7 +45,7 @@ jobs:
           git pull origin main
           git add --all
           git commit -m 'Automatic dataset update'
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/alisaleks/Agenda_App.git
+          git pull origin main --rebase  # Adjust to git pull origin main if rebase issues arise
           git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
