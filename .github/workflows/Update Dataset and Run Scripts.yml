@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          persist-credentials: false 
 
       - name: Set up Python
         uses: actions/setup-python@v3
@@ -28,13 +30,13 @@ jobs:
       - name: Check for changes
         id: check_changes
         run: |
-          git fetch
-          if git diff --quiet; then
-            echo "No changes detected."
-            echo "changes_detected=false" >> $GITHUB_ENV
-          else
+          git status --porcelain > changes.txt
+          if [ -s changes.txt ]; then
             echo "Changes detected."
             echo "changes_detected=true" >> $GITHUB_ENV
+          else
+            echo "No changes detected."
+            echo "changes_detected=false" >> $GITHUB_ENV
           fi
 
       - name: Commit and push changes
@@ -42,9 +44,9 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull origin main  # Pull first to avoid conflicts
           git add --all
           git commit -m 'Automatic dataset update'
-          git pull origin main --rebase  # Adjust to `git pull origin main` if rebase issues arise
           git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
