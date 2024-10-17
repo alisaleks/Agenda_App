@@ -1093,7 +1093,7 @@ with tab3:
     df_tab3_with_totals = pd.concat([total_df_tab3, df_tab3], ignore_index=True)  
 
     # Configure GridOptionsBuilder with JavaScript code
-    gb_tab3 = GridOptionsBuilder.from_dataframe(df_tab3_with_totals)
+    gb_tab3 = GridOptionsBuilder.from_dataframe(df_tab3)
     # Add individual column configurations for conditional formatting
     for column in df_tab3[1:]:
         gb_tab3.configure_column(field=column, cellStyle=js_code)
