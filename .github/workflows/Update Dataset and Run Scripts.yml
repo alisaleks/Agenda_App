@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt  # Remove this step if no dependencies
+          pip install -r requirements.txt  
 
       - name: Run Python script
         run: python openslotsdata.py 
@@ -44,9 +44,10 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git pull origin main  # Pull first to avoid conflicts
+          git pull origin main
           git add --all
           git commit -m 'Automatic dataset update'
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/alisaleks/Agenda_App.git
           git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
